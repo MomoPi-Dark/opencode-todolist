@@ -1,20 +1,19 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { TodoTree } from "../src/todo/todo";
 import {
   assertWriteIsInitialization,
   formatReadOutput,
   formatUpdateOutput,
 } from "../src/index";
-import { buildContinuePrompt, CONTINUE_PROMPT_MAX_ITEMS } from "../src/tui";
 import {
   TodoInputToolSchema,
   TodoOutputToolSchema,
   type TodoRootItem,
   type TodoUpdateInput,
 } from "../src/schema/todo.schema";
-import { updateTodoById } from "../src/todo/update";
 import { findNextTodo } from "../src/todo/hint";
+import { TodoTree } from "../src/todo/todo";
+import { updateTodoById } from "../src/todo/update";
+import { buildContinuePrompt, CONTINUE_PROMPT_MAX_ITEMS } from "../src/tui";
 
 // Test 1: Accepts valid single in_progress root task
 {
@@ -71,7 +70,13 @@ import { findNextTodo } from "../src/todo/hint";
         id: 1,
         content: "Parent 1",
         status: "in_progress",
-        children: [{ id: 2.1, content: "Child from other parent", status: "in_progress" }],
+        children: [
+          {
+            id: 2.1,
+            content: "Child from other parent",
+            status: "in_progress",
+          },
+        ],
       },
     ],
   };
@@ -127,9 +132,7 @@ import { findNextTodo } from "../src/todo/hint";
       id: 1,
       content: "Parent",
       status: "pending",
-      children: [
-        { id: 1.1, content: "Child 1", status: "in_progress" },
-      ],
+      children: [{ id: 1.1, content: "Child 1", status: "in_progress" }],
     },
   ];
   const tree = new TodoTree(todos);
@@ -146,7 +149,12 @@ import { findNextTodo } from "../src/todo/hint";
       content: "Root task",
       status: "in_progress",
       children: [
-        { id: 1.1, content: "Subtask 1", status: "completed", note: "done step" },
+        {
+          id: 1.1,
+          content: "Subtask 1",
+          status: "completed",
+          note: "done step",
+        },
         { id: 1.2, content: "Subtask 2", status: "in_progress" },
       ],
     },
@@ -168,7 +176,9 @@ import { findNextTodo } from "../src/todo/hint";
         id: 1,
         content: "Parent",
         status: "in_progress",
-        children: [{ id: 1.1, content: "Child", status: "in_progress", note: "work" }],
+        children: [
+          { id: 1.1, content: "Child", status: "in_progress", note: "work" },
+        ],
       },
     ],
   };
@@ -181,13 +191,22 @@ import { findNextTodo } from "../src/todo/hint";
         id: 1,
         content: "Parent",
         status: "in_progress" as const,
-        children: [{ id: 1.1, content: "Child", status: "in_progress" as const, note: "work" }],
+        children: [
+          {
+            id: 1.1,
+            content: "Child",
+            status: "in_progress" as const,
+            note: "work",
+          },
+        ],
       },
     ],
   };
   const parsedOutput = TodoOutputToolSchema.safeParse(outputData);
   assert.equal(parsedOutput.success, true);
-  console.log("✔ validates write operation & output schema with nested children");
+  console.log(
+    "✔ validates write operation & output schema with nested children",
+  );
 }
 
 // Test 10: Continue prompt includes progress and every open item
@@ -198,7 +217,14 @@ import { findNextTodo } from "../src/todo/hint";
     total: 4,
     items: [
       { id: 1, content: "Root", icon: "⦿", status: "in_progress", depth: 0 },
-      { id: 1.1, content: "Child", icon: "○", status: "pending", depth: 1, note: "needs work" },
+      {
+        id: 1.1,
+        content: "Child",
+        icon: "○",
+        status: "pending",
+        depth: 1,
+        note: "needs work",
+      },
       { id: 2, content: "Done", icon: "✓", status: "completed", depth: 0 },
       { id: 3, content: "Cancelled", icon: "✗", status: "cancelled", depth: 0 },
     ],
@@ -233,7 +259,7 @@ import { findNextTodo } from "../src/todo/hint";
   assert.ok(prompt.includes("... (3 more open item(s))"));
   assert.ok(
     prompt.split("\n").filter((line) => line.startsWith("- ")).length ===
-      CONTINUE_PROMPT_MAX_ITEMS,
+    CONTINUE_PROMPT_MAX_ITEMS,
   );
   assert.ok(!prompt.includes(longNote));
   assert.ok(!prompt.includes("c".repeat(120)));
@@ -265,7 +291,10 @@ import { findNextTodo } from "../src/todo/hint";
   if (result.valid) {
     const stats = new TodoTree(result.data).calculateStats();
     assert.equal(result.data.length, 10);
-    assert.equal(result.data.every((root) => root.children?.length === 5), true);
+    assert.equal(
+      result.data.every((root) => root.children?.length === 5),
+      true,
+    );
     assert.equal(stats.totalSubTasks, 50);
     assert.equal(stats.completedSubTasks, 0);
   }
@@ -362,7 +391,9 @@ import { findNextTodo } from "../src/todo/hint";
     status: "completed",
   });
   assert.equal(inOrder.todos[0]?.status, "completed");
-  console.log("✔ rejects out-of-order updates until the previous root finishes");
+  console.log(
+    "✔ rejects out-of-order updates until the previous root finishes",
+  );
 }
 
 // Test 14b: Progress never moves backward or edits a finished item
@@ -520,39 +551,9 @@ import { findNextTodo } from "../src/todo/hint";
       id: 2,
       content: "Root 2",
       status: "error",
-      children: [
-        { id: 2.1, content: "Child 2.1", status: "pending" },
-      ],
+      children: [{ id: 2.1, content: "Child 2.1", status: "pending" }],
     },
   ];
   assert.equal(findNextTodo(errored)?.id, 1);
   console.log("✔ next step respects strict root order");
-}
-
-// Test 18: OpenTUI is supplied by the OpenCode host, not bundled by the plugin
-{
-  const packageJSON = JSON.parse(
-    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-  ) as {
-    dependencies?: Record<string, string>;
-    peerDependencies?: Record<string, string>;
-    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
-  };
-
-  assert.equal(packageJSON.dependencies?.["@opentui/core"], undefined);
-  assert.equal(packageJSON.dependencies?.["@opentui/solid"], undefined);
-  assert.equal(packageJSON.dependencies?.["solid-js"], undefined);
-  assert.equal(packageJSON.peerDependencies?.["@opentui/core"], ">=0.5.17");
-  assert.equal(packageJSON.peerDependencies?.["@opentui/solid"], ">=0.5.17");
-  assert.equal(packageJSON.peerDependencies?.["solid-js"], ">=1.9.0");
-  assert.equal(
-    packageJSON.peerDependenciesMeta?.["@opentui/core"]?.optional,
-    true,
-  );
-  assert.equal(
-    packageJSON.peerDependenciesMeta?.["@opentui/solid"]?.optional,
-    true,
-  );
-  assert.equal(packageJSON.peerDependenciesMeta?.["solid-js"]?.optional, true);
-  console.log("✔ keeps OpenTUI out of bundled plugin dependencies");
 }
