@@ -30,6 +30,7 @@
     "url": "https://github.com/MomoPi-Dark/opencode-todolist"
   },
   "scripts": {
+    "prepare": "bun run compile",
     "compile": "tsc -p tsconfig.build.json && node scripts/build-jsx.mjs",
     "build:jsx": "node scripts/build-jsx.mjs",
     "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/build-jsx.mjs\"",
