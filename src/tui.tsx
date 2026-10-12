@@ -18,28 +18,18 @@ import {
 } from "./icons/icons";
 import type { TodoStatus } from "./schema/status.schema";
 import {
-  formatTodoProgress,
-  getStatusIcon,
+  getTodosDirectory,
+  hashSessionID,
+  readTodosSync,
+  writeTodos,
+} from "./store/store";
+import {
   getTodoDisplaySummary,
   hasOpenTodos,
   type TodoDisplayItem,
   type TodoDisplaySummary,
 } from "./todo/display";
 import { TodoTree } from "./todo/todo";
-import {
-  getTodosDirectory,
-  hashSessionID,
-  readTodosSync,
-  writeTodos,
-} from "./store/store";
-
-export {
-  formatTodoProgress,
-  getStatusIcon,
-  getTodoDisplaySummary,
-  type TodoDisplayItem,
-  type TodoDisplaySummary,
-};
 
 /** How many open items the Continue prompt lists before collapsing the rest. */
 export const CONTINUE_PROMPT_MAX_ITEMS = 3;
@@ -86,7 +76,9 @@ export function buildContinuePrompt(
     );
     if (hidden > 0) lines.push(`... (${hidden} more open item(s))`);
   } else {
-    lines.push("No open items are listed. Verify the stored state before stopping.");
+    lines.push(
+      "No open items are listed. Verify the stored state before stopping.",
+    );
   }
 
   lines.push(
@@ -789,7 +781,7 @@ function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
 }
 
 export default Plugin.define({
-  id: "todos.tui",
+  id: "opencode.todolist.tui",
   setup(context) {
     const prompt = context.ui.slot({
       after: "session.composer.top",

@@ -229,6 +229,6 @@ export async function registerTodoPromptHook(
 }
 
 export default Plugin.define({
-  id: "todolist.tool",
+  id: "opencode.todolist.tool",
   setup: registerTodoTools,
 });
