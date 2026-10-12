@@ -1,5 +1,5 @@
 {
-  "name": "opencode-sidebar-modern-todolist",
+  "name": "@gamflaz/opencode-todolist",
   "version": "1.0.0",
   "description": "Hierarchical todo list plugin for OpenCode with a real-time TUI widget.",
   "type": "module",
@@ -54,6 +54,5 @@
     "proper-lockfile": "^4.1.2",
     "solid-js": "1.9.12",
     "zod": "^4.6.6"
-  },
-  "private": true
+  }
 }
