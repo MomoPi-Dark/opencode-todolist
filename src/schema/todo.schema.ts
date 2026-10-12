@@ -104,7 +104,9 @@ export const TodoReadOperationSchema = z
 
 export const TodoWriteOperationSchema = z
   .object({
-    operation: z.literal("write").describe("'write' to initialize an empty list."),
+    operation: z
+      .literal("write")
+      .describe("'write' to initialize an empty list."),
     todos: TodoListSchema.describe(
       "Required for 'write'. Pass [] to clear the list.",
     ),
@@ -134,3 +136,4 @@ export type TodoInputTool = z.infer<typeof TodoInputToolSchema>;
 export const TodoOutputToolSchema = z.object({
   todos: z.array(TodoRootItemSchema),
 });
+export type TodoOutputTool = z.infer<typeof TodoOutputToolSchema>;

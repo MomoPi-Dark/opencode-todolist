@@ -67,8 +67,9 @@ await Promise.all(
       output,
       rewriteSpecifiers(transformed),
     );
-    await rm(output.replace(/\.js$/, ".jsx"), { force: true });
-    await rm(`${output}.map`, { force: true });
+
+    // await rm(output.replace(/\.js$/, ".jsx"), { force: true });
+    // await rm(`${output}.map`, { force: true });
 
     if (changed) {
       changedCount++;

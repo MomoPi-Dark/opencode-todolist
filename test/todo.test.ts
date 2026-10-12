@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { TodoTree } from "../src/todo/todo";
 import {
   assertWriteIsInitialization,
@@ -526,4 +527,32 @@ import { findNextTodo } from "../src/todo/hint";
   ];
   assert.equal(findNextTodo(errored)?.id, 1);
   console.log("✔ next step respects strict root order");
+}
+
+// Test 18: OpenTUI is supplied by the OpenCode host, not bundled by the plugin
+{
+  const packageJSON = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as {
+    dependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  };
+
+  assert.equal(packageJSON.dependencies?.["@opentui/core"], undefined);
+  assert.equal(packageJSON.dependencies?.["@opentui/solid"], undefined);
+  assert.equal(packageJSON.dependencies?.["solid-js"], undefined);
+  assert.equal(packageJSON.peerDependencies?.["@opentui/core"], ">=0.5.17");
+  assert.equal(packageJSON.peerDependencies?.["@opentui/solid"], ">=0.5.17");
+  assert.equal(packageJSON.peerDependencies?.["solid-js"], ">=1.9.0");
+  assert.equal(
+    packageJSON.peerDependenciesMeta?.["@opentui/core"]?.optional,
+    true,
+  );
+  assert.equal(
+    packageJSON.peerDependenciesMeta?.["@opentui/solid"]?.optional,
+    true,
+  );
+  assert.equal(packageJSON.peerDependenciesMeta?.["solid-js"]?.optional, true);
+  console.log("✔ keeps OpenTUI out of bundled plugin dependencies");
 }
