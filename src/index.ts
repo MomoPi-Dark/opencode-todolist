@@ -92,9 +92,14 @@ export function assertWriteIsInitialization(
   incoming: readonly TodoRootItem[],
 ): void {
   if (existing.length > 0 && incoming.length > 0) {
-    throw new Error(
-      "[manage_todo_list] write is only allowed for initialization. Use operation 'update' for existing todos.",
-    );
+    const messages = [
+      '[manage_todo_list] Invalid operation: "write".',
+      "",
+      'The "write" operation is only allowed during initialization.',
+      'Use "update" to modify an existing todo list.',
+      'To replace the entire list, use "write" with "todos:[]".',
+    ];
+    throw new Error(messages.join("\n"));
   }
 }
 
