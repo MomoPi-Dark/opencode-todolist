@@ -1,4 +1,11 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,8 +68,8 @@ await Promise.all(
       rewriteSpecifiers(transformed),
     );
 
-    // await rm(output.replace(/\.js$/, ".jsx"), { force: true });
-    // await rm(`${output}.map`, { force: true });
+    await rm(output.replace(/\.js$/, ".jsx"), { force: true });
+    await rm(`${output}.map`, { force: true });
 
     if (changed) {
       changedCount++;

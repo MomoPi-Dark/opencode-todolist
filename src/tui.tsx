@@ -620,6 +620,8 @@ function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
     return theme().border.base;
   };
 
+  const a = "";
+
   return (
     <Show when={summary()}>
       {(data) => (
