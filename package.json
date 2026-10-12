@@ -1,0 +1,46 @@
+{
+  "name": "todolist",
+  "version": "0.1.0",
+  "description": "Hierarchical todo list plugin for OpenCode.",
+  "type": "module",
+  "files": [
+    "dist/",
+    "index.js",
+    "tui.js",
+    "skills/",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./tui": "./dist/tui.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-jsx.mjs",
+    "build:jsx": "node scripts/build-jsx.mjs",
+    "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/build-jsx.mjs\"",
+    "test": "bun test/todo.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun run test",
+    "update": "git pull && bun run check && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@opencode/client": "^2.0.18",
+    "@opencode/plugin": "^2.0.18",
+    "@opencode/theme": "^2.0.21",
+    "@opentui/core": "^0.5.17",
+    "@opentui/solid": "^0.5.17",
+    "@resvg/resvg-js": "^2.6.2",
+    "proper-lockfile": "^4.1.2",
+    "react": "^19.3.0",
+    "solid-js": "^1.9.4",
+    "tsc-watch": "^7.2.1",
+    "zod": "^4.6.6"
+  },
+  "private": true
+}
