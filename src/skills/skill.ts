@@ -96,11 +96,7 @@ export function parseSkillFile(file: string): ParsedSkill | null {
 
 export function getSkillsDirectory(): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.join(moduleDir, "skills"),
-    path.resolve(moduleDir, "..", "skills"),
-    path.resolve(moduleDir, "..", "..", "skills"),
-  ];
+  const candidates = [path.resolve(moduleDir, "..", "..", "skills")];
   return candidates.find((dir) => fs.existsSync(dir)) ?? candidates[0] ?? "";
 }
 
@@ -120,9 +116,9 @@ export function readSkills(dir: string = getSkillsDirectory()): LocalSkill[] {
       const isDir = isDirectoryEntry(dir, entry);
       const candidates = isDir
         ? [
-            path.join(dir, entry.name, "SKILL.md"),
-            path.join(dir, entry.name, `${entry.name}.md`),
-          ]
+          path.join(dir, entry.name, "SKILL.md"),
+          path.join(dir, entry.name, `${entry.name}.md`),
+        ]
         : path.extname(entry.name) === ".md"
           ? [path.join(dir, entry.name)]
           : [];

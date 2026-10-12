@@ -45,22 +45,23 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@opencode/client": "2.0.27",
+    "@opencode/plugin": "2.0.27",
+    "@opencode/theme": "2.0.27",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
     "@resvg/resvg-js": "^2.6.2",
+    "dotenv": "^18.0.7",
+    "effect": "^4.0.3",
     "proper-lockfile": "^4.1.2",
     "react": "^19.3.0",
+    "solid-js": "^1.9.17",
     "tsc-watch": "^7.2.1",
-    "zod": "^4.6.6",
-    "@opencode/client": "^2.0.27",
-    "@opencode/plugin": "^2.0.27",
-    "@opencode/theme": "^2.0.27",
-    "@opentui/core": "0.6.1",
-    "@opentui/solid": "0.6.1",
-    "effect": "^4.0.3",
-    "solid-js": "^1.9.17"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.6.1",
-    "@opentui/solid": ">=0.6.1",
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
     "solid-js": ">=1.9.17"
   },
   "peerDependenciesMeta": {

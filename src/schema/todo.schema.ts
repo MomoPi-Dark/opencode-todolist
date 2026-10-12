@@ -123,7 +123,6 @@ export const TodoUpdateOperationSchema = z
     note: z.string().nullable().optional(),
   })
   .strict();
-
 export type TodoUpdateInput = z.infer<typeof TodoUpdateOperationSchema>;
 
 export const TodoInputToolSchema = z.discriminatedUnion("operation", [

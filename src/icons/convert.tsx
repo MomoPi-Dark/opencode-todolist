@@ -8,7 +8,7 @@ import { supportsImageRendering } from "./capabilities";
 export function SvgIcon(
   props: ImageProps & {
     source: string;
-    color: RGBA | string;
+    color?: RGBA | string;
     fallback: string;
   },
 ) {
@@ -25,13 +25,17 @@ export function SvgIcon(
   onCleanup(() => context.renderer.off("capabilities", updateImageSupport));
 
   const iconColor = () =>
-    typeof props.color === "string" ? props.color : rgbToHex(props.color);
+    props.color
+      ? typeof props.color === "string"
+        ? props.color
+        : rgbToHex(props.color)
+      : "currentColor";
 
   const pngBuffer = createMemo(() => {
     const bgToken = context.theme.background.base;
     const bg = rgbToHex(bgToken);
 
-    const svg = props.source
+    let svg = props.source
       .replace(/stroke="[^"]*"/g, `stroke="${iconColor()}"`)
       .replace(/color="[^"]*"/g, `color="${iconColor()}"`);
 

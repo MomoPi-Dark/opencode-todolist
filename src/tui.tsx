@@ -14,6 +14,7 @@ import { SvgIcon } from "./icons/convert";
 import {
   arrowDownSvgIcon,
   arrowRightSvgIcon,
+  continuePromptSvgIcon,
   removeSvgIcon,
 } from "./icons/icons";
 import type { TodoStatus } from "./schema/status.schema";
@@ -237,7 +238,9 @@ export function TodoList(props: {
   ref?: (el: ScrollBoxRenderable) => void;
 }) {
   const rowId = (id: number) => `todo-row-${id}`;
-  const [scrollBox, setScrollBox] = createSignal<ScrollBoxRenderable>();
+
+  const [scrollYBox, setScrollYBox] = createSignal<ScrollBoxRenderable>();
+  const [scrollXBox, setScrollXBox] = createSignal<ScrollBoxRenderable>();
 
   const entries = createMemo(() =>
     buildTodoListEntries(props.rows, props.expandedIds ?? []),
@@ -256,7 +259,7 @@ export function TodoList(props: {
   };
 
   const attach = (box: ScrollBoxRenderable) => {
-    setScrollBox(box);
+    setScrollYBox(box);
     box.content.maxWidth = undefined;
     const internalOnSizeChange = box.content.onSizeChange;
     box.content.onSizeChange = () => {
@@ -269,7 +272,7 @@ export function TodoList(props: {
   createEffect(() => {
     void props.rows.map((row) => `${row.id}:${row.status}`).join("|");
     void props.expandedIds?.join("|");
-    const box = scrollBox();
+    const box = scrollYBox();
     if (box) followActiveRow(box);
   });
 
@@ -379,8 +382,12 @@ export function TodoList(props: {
 
 function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
   const [refresh, setRefresh] = createSignal(0);
-  const [isCollapsed, setIsCollapsed] = createSignal(true);
+
+  // Hover
   const [isClearHovered, setIsClearHovered] = createSignal(false);
+  const [isContinueHovered, setIsContinueHovered] = createSignal(false);
+
+  const [isCollapsed, setIsCollapsed] = createSignal(true);
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
   const [expandedIds, setExpandedIds] = createSignal<number[]>([]);
@@ -701,23 +708,37 @@ function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
             >
               <box
                 flexDirection="row"
-                marginRight={1}
+                gap={1}
+                marginRight={3}
+                onMouseOver={() => setIsContinueHovered(true)}
+                onMouseOut={() => setIsContinueHovered(false)}
                 onMouseDown={(e) => {
                   if (e.button === 0) {
-                    e.stopPropagation?.();
+                    e.stopPropagation();
                     void continueTodos();
                   }
                 }}
               >
-                <text wrapMode="none">
-                  <span
-                    style={{
-                      fg:
-                        theme().text.action?.primary?.base ?? theme().text.base,
-                    }}
-                  >
-                    {"↻ Continue"}
-                  </span>
+                <SvgIcon
+                  source={continuePromptSvgIcon}
+                  color={
+                    isContinueHovered()
+                      ? theme().text.action.primary.base
+                      : theme().text.muted
+                  }
+                  fallback="↻"
+                  width={2}
+                  height={1}
+                />
+                <text
+                  wrapMode="none"
+                  fg={
+                    isContinueHovered()
+                      ? theme().text.action.primary.base
+                      : theme().text.muted
+                  }
+                >
+                  Continue
                 </text>
               </box>
             </Show>
@@ -770,7 +791,6 @@ function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
                 }))}
                 expandedIds={expandedIds()}
                 onToggleRow={toggleRowNote}
-                scrollbarColor={getBorderColor()}
               />
             </box>
           </Show>
@@ -782,16 +802,11 @@ function TodoProgress(props: { context: Plugin.Context; sessionID: string }) {
 
 export default Plugin.define({
   id: "opencode.todolist.tui",
-  setup(context) {
-    const prompt = context.ui.slot({
+  setup: (context) =>
+    context.ui.slot({
       after: "session.composer.top",
       render: (input) => (
         <TodoProgress context={context} sessionID={input.sessionID} />
       ),
-    });
-
-    return () => {
-      prompt();
-    };
-  },
+    }),
 });

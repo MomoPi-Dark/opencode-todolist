@@ -46,11 +46,9 @@ export class TodoTree {
   private static readonly BAR_FILLED = "█";
   private static readonly BAR_UNFILLED = "░";
 
-  constructor(readonly todos: readonly TodoRootItem[]) {}
+  constructor(readonly todos: readonly TodoRootItem[]) { }
 
-  // ---------------------------------------------------------------------------
   // Static helpers
-  // ---------------------------------------------------------------------------
 
   static isOpenStatus(status: TodoStatus): boolean {
     return OPEN_STATUSES.includes(status);
@@ -110,9 +108,7 @@ export class TodoTree {
     return `Duplicate ID found: '${id}'. Every ID must be unique across the tree.`;
   }
 
-  // ---------------------------------------------------------------------------
   // Statistics
-  // ---------------------------------------------------------------------------
 
   public calculateStats(): TodoStats {
     const totalSteps = this.todos.length;
@@ -150,9 +146,7 @@ export class TodoTree {
     };
   }
 
-  // ---------------------------------------------------------------------------
   // Validation
-  // ---------------------------------------------------------------------------
 
   public validateAndNormalize(): TodoValidationResult {
     const error = this.validateStructure();
@@ -233,9 +227,7 @@ export class TodoTree {
     return { valid: true, data: normalized };
   }
 
-  // ---------------------------------------------------------------------------
   // Rendering
-  // ---------------------------------------------------------------------------
 
   public render(): string {
     const lines: string[] = [];

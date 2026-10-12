@@ -52,12 +52,9 @@ export class TodoStore {
   private static readonly FILE_PREFIX = "todos-";
   private static readonly FILE_SUFFIX = ".json";
 
-  constructor(private readonly ctx: PlatformContext = {}) {}
+  constructor(private readonly ctx: PlatformContext = {}) { }
 
-  // ---------------------------------------------------------------------------
   // Static helpers
-  // ---------------------------------------------------------------------------
-
   public static isMissingFile(error: unknown): boolean {
     return (
       typeof error === "object" &&
@@ -93,9 +90,7 @@ export class TodoStore {
     if (process.platform !== "win32") await chmod(path, mode);
   }
 
-  // ---------------------------------------------------------------------------
   // Platform / directory resolution
-  // ---------------------------------------------------------------------------
 
   private get env(): Record<string, string | undefined> {
     return this.ctx.env ?? process.env;
@@ -193,9 +188,7 @@ export class TodoStore {
     return this.getTodosDirectory();
   }
 
-  // ---------------------------------------------------------------------------
   // Path getters
-  // ---------------------------------------------------------------------------
 
   public getSessionDirectory(sessionID: string): string {
     const baseDir = this.resolveTodosBaseDir();
@@ -250,9 +243,7 @@ export class TodoStore {
     );
   }
 
-  // ---------------------------------------------------------------------------
   // Public read API
-  // ---------------------------------------------------------------------------
 
   public async readTodos(sessionID: string): Promise<TodoRootItem[]> {
     const filePath = this.getTodoFilePath(sessionID);
@@ -316,9 +307,7 @@ export class TodoStore {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // Public write API
-  // ---------------------------------------------------------------------------
 
   public async writeTodos(
     sessionID: string,
@@ -410,9 +399,7 @@ export class TodoStore {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // Internals
-  // ---------------------------------------------------------------------------
 
   private scanTodoFiles(directory: string, prefix: string): SessionFile[] {
     const suffix = TodoStore.FILE_SUFFIX;
@@ -551,7 +538,7 @@ export class TodoStore {
 
       const to = join(todosDir, name);
       if (existsSync(to)) continue;
-      await rename(join(sessionRoot, name), to).catch(() => {});
+      await rename(join(sessionRoot, name), to).catch(() => { });
     }
   }
 }

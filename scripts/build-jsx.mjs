@@ -1,11 +1,4 @@
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,12 +79,12 @@ for (const name of ["index", "tui"]) {
   const wrapper = join(root, `${name}.js`);
   const changed = await writeIfChanged(
     wrapper,
-    `export { default } from "./dist/${name}.js";\n`,
+    `export { default } from "./dist/${name}";`,
   );
 
   if (changed) {
     changedCount++;
-    console.log(`✓ ${name}.js → ./dist/${name}.js`);
+    console.log(`✓ ${name}.js → ./dist/${name}`);
   }
 }
 
