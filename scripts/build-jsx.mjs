@@ -69,6 +69,7 @@ await Promise.all(
     );
 
     await rm(output.replace(/\.js$/, ".jsx"), { force: true });
+    await rm(`${output}.jsx.map`, { force: true });
     await rm(`${output}.map`, { force: true });
 
     if (changed) {
