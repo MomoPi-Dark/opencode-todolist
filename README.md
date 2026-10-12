@@ -17,7 +17,7 @@ plus a TUI widget above the composer that shows progress in real time.
 Requires [Bun](https://bun.sh/) and OpenCode V2.
 
 ```bash
-git clone https://github.com/<your-account>/opencode-todolist.git \
+git clone https://github.com/MomoPi-Dark/opencode-todolist.git \
   ~/.config/opencode/plugins/todolist
 cd ~/.config/opencode/plugins/todolist
 bun install

@@ -1,18 +1,33 @@
 {
-  "name": "todolist",
-  "version": "0.1.0",
-  "description": "Hierarchical todo list plugin for OpenCode.",
+  "name": "opencode-sidebar-modern-todolist",
+  "version": "1.0.0",
+  "description": "Hierarchical todo list plugin for OpenCode with a real-time TUI widget.",
   "type": "module",
   "files": [
     "dist/",
     "index.js",
     "tui.js",
     "skills/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": "./dist/index.js",
     "./tui": "./dist/tui.js"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opentui",
+    "tui",
+    "todolist",
+    "todos"
+  ],
+  "author": "Gamflaz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MomoPi-Dark/opencode-todolist"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/build-jsx.mjs",
