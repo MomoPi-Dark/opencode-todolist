@@ -1,6 +1,6 @@
 {
   "name": "@gamflaz/opencode-todolist",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Hierarchical todo list plugin for OpenCode with a real-time TUI widget.",
   "type": "module",
   "files": [
@@ -11,11 +11,11 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./dist/index.js",
+  "main": "./index.js",
   "exports": {
-    ".": "./dist/index.js",
-    "./server": "./dist/index.js",
-    "./tui": "./dist/tui.js"
+    ".": "./index.js",
+    "./server": "./index.js",
+    "./tui": "./tui.js"
   },
   "keywords": [
     "opencode",
