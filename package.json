@@ -11,11 +11,11 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./index.ts",
+  "main": "./dist/index.js",
   "exports": {
-    ".": "./index.ts",
-    "./server": "./index.ts",
-    "./tui": "./tui.ts"
+    ".": "./dist/index.js",
+    "./server": "./dist/index.js",
+    "./tui": "./dist/tui.js"
   },
   "keywords": [
     "opencode",
