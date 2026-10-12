@@ -498,7 +498,7 @@ import { buildContinuePrompt, CONTINUE_PROMPT_MAX_ITEMS } from "../src/tui";
                 [{ id: 1, content: "Existing", status: "pending" }],
                 [{ id: 2, content: "Replacement", status: "pending" }],
             ),
-        /write is only allowed for initialization/,
+        /only allowed during initialization/,
     );
     assert.equal(
         TodoInputToolSchema.safeParse({ operation: "write", todos: [] }).success,
