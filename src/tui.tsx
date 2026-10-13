@@ -1,8 +1,9 @@
 import { Plugin } from "@opencode/plugin/tui";
+import { RendererContext } from "@opentui/solid";
 import { TodoProgress } from "./tui/todo-panel";
 
 export default Plugin.define({
-  id: "opencode.todolist.tui",
+  id: "opencode.todolist.tui1",
   setup(context) {
     const releaseSlot = context.ui.slot({
       append: "session.composer.top",
@@ -11,7 +12,11 @@ export default Plugin.define({
           .directory;
         if (!directory) return null;
 
-        return <TodoProgress context={context} sessionID={props.sessionID} />;
+        return (
+          <RendererContext.Provider value={context.renderer}>
+            <TodoProgress context={context} sessionID={props.sessionID} />
+          </RendererContext.Provider>
+        );
       },
     });
 
