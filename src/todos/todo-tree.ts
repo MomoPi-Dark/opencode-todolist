@@ -1,5 +1,5 @@
-import { OPEN_STATUSES, type TodoStatus } from "../schema/status.schema.js";
-import type { TodoChildern, TodoRootItem } from "../schema/todo.schema";
+import { OPEN_STATUSES, type TodoStatus } from "../schemas/status.js";
+import type { TodoChildern, TodoRootItem } from "../schemas/todo";
 
 export interface TodoProgress {
   completed: number;

@@ -1,6 +1,6 @@
-import type { TodoStatus } from "../schema/status.schema";
-import type { TodoRootItem } from "../schema/todo.schema";
-import { TodoTree } from "./todo";
+import type { TodoStatus } from "../schemas/status";
+import type { TodoRootItem } from "../schemas/todo";
+import { TodoTree } from "./todo-tree";
 
 export interface TodoDisplayItem {
   id: number;

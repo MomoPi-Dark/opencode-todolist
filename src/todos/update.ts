@@ -1,9 +1,9 @@
-import type { Priority, TodoStatus } from "../schema/status.schema";
+import type { Priority, TodoStatus } from "../schemas/status";
 import type {
   TodoChildern,
   TodoRootItem,
   TodoUpdateInput,
-} from "../schema/todo.schema";
+} from "../schemas/todo";
 
 type UpdateFields = Omit<TodoUpdateInput, "id">;
 type UpdatableTodo = {

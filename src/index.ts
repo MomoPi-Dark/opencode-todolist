@@ -3,9 +3,9 @@ import {
   TodoInputToolSchema,
   TodoOutputToolSchema,
   type TodoRootItem,
-} from "./schema/todo.schema";
-import { registerTodoSkills } from "./skills/skill";
-import { readTodoData, readTodos, updateTodos } from "./store/store";
+} from "./schemas/todo";
+import { registerTodoSkills } from "./skills/loader";
+import { readTodoData, readTodos, updateTodos } from "./storage/todo-store";
 import {
   buildTodoHint,
   consumeTodoHint,
@@ -13,9 +13,9 @@ import {
   findStuckParent,
   flattenLeaves,
   isAnyTodoActive,
-} from "./todo/hint";
-import { TodoTree } from "./todo/todo";
-import { updateTodoById } from "./todo/update";
+} from "./todos/hint";
+import { TodoTree } from "./todos/todo-tree";
+import { updateTodoById } from "./todos/update";
 
 export function formatReadOutput(todos: readonly TodoRootItem[]): string {
   if (todos.length === 0) return "No todos recorded.";

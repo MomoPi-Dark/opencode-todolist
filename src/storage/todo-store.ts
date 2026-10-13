@@ -11,8 +11,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import * as lockfile from "proper-lockfile";
-import { TodoRootItemSchema, type TodoRootItem } from "../schema/todo.schema";
-import { TodoTree } from "../todo/todo";
+import { TodoRootItemSchema, type TodoRootItem } from "../schemas/todo";
+import { TodoTree } from "../todos/todo-tree";
 import { InvalidTodoDataError } from "./errors";
 
 /**

@@ -1,5 +1,5 @@
 import z from "zod";
-import { PrioritySchema, TodoStatusSchema } from "./status.schema";
+import { PrioritySchema, TodoStatusSchema } from "./status";
 
 // Child id format: <root_id>.<n> as a number -> 1.1, 2.3, etc.
 // Only a single decimal digit (1-9) is allowed, see the note below.
