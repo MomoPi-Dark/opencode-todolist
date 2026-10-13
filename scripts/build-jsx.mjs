@@ -47,10 +47,7 @@ const rewriteSpecifiers = (code) =>
   );
 
 const entries = await readdir(srcDir, { recursive: true });
-const files = entries
-  .filter(isJsxFile)
-  .filter((v) => ["tui.tsx"].includes(v))
-  .sort();
+const files = entries.filter(isJsxFile).sort();
 
 if (files.length === 0) {
   console.warn(`No .jsx/.tsx files found in ${relative(root, srcDir)}`);
@@ -72,10 +69,6 @@ await Promise.all(
     );
 
     await rm(`${output}.map`, { force: true });
-
-    // await rm(output.replace(/\.js$/, ".jsx"), { force: true });
-    // await rm(`${output}.jsx.map`, { force: true });
-    // await rm(`${output}.map`, { force: true });
 
     if (changed) {
       changedCount++;
