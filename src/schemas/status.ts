@@ -17,3 +17,12 @@ export const OPEN_STATUSES: readonly TodoStatus[] = [
   "in_progress",
   "error",
 ];
+
+/** Human-readable labels used in the resume prompt. */
+export const StatusLabel: Record<TodoStatus, string> = {
+  pending: "not started",
+  in_progress: "currently being worked on",
+  completed: "completed",
+  cancelled: "cancelled",
+  error: "needs fixing",
+};

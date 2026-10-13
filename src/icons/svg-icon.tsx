@@ -3,7 +3,7 @@ import { RGBA, rgbToHex, type TerminalCapabilities } from "@opentui/core";
 import { type ImageProps } from "@opentui/solid";
 import { Resvg } from "@resvg/resvg-js";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
-import { supportsImageRendering } from "./capabilities";
+import { supportsImageRendering } from "./image-capabilities";
 
 export function SvgIcon(
   props: ImageProps & {

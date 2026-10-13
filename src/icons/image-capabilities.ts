@@ -1,6 +1,6 @@
 import { type TerminalCapabilities } from "@opentui/core";
 
-/** Minimal capability view needed to decide between image and text icons. */
+/** Minimal image capability view needed to decide between image and text icons. */
 export type ImageCapabilitySnapshot = Pick<
   TerminalCapabilities,
   "kitty_graphics" | "sixel"

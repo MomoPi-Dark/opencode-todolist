@@ -1,5 +1,6 @@
 import z from "zod";
 
+/** Platform fields used to resolve the todo storage location. */
 export const PlatformContextSchema = z.object({
     platform: z
         .enum([

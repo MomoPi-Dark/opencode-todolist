@@ -1,8 +1,8 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { getHintMarkerPath, readTodoData, TodoStore } from "../store/store";
-import type { TodoChildern, TodoRootItem } from "../schema/todo.schema";
-import type { TodoStatus } from "../schema/status.schema";
-import { TodoTree } from "./todo";
+import { getHintMarkerPath, readTodoData, TodoStore } from "../storage/todo-store";
+import type { TodoChildern, TodoRootItem } from "../schemas/todo";
+import type { TodoStatus } from "../schemas/status";
+import { TodoTree } from "./todo-tree";
 
 export const DEFAULT_STALE_MS = 30 * 60 * 1000; // 30 minutes (prompt fallback)
 export const CONTEXT_STALE_MS = 6 * 60 * 60 * 1000; // 6 hours

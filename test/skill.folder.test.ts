@@ -6,8 +6,8 @@ import { basename, join } from "node:path";
 // skill it finds, so adding, renaming or breaking a skill fails the suite.
 
 const { getSkillsDirectory, parseSkillMarkdown, readSkills } =
-    await import("../src/skills/skill.ts");
-const { TodoInputToolSchema } = await import("../src/schema/todo.schema.ts");
+    await import("../src/skills/loader.ts");
+const { TodoInputToolSchema } = await import("../src/schemas/todo.ts");
 
 const skillsDir = getSkillsDirectory();
 assert.ok(existsSync(skillsDir), `skills directory must exist: ${skillsDir}`);

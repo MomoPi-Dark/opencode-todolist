@@ -9,7 +9,7 @@ const {
     parseSkillMarkdown,
     readSkills,
     registerTodoSkills,
-} = await import("../src/skills/skill.ts");
+} = await import("../src/skills/loader.ts");
 
 // ---------------------------------------------------------------------------
 // parseSkillMarkdown
