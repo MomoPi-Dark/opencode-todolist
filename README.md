@@ -24,10 +24,26 @@ bun install
 bun run build
 ```
 
+Or add it directly through the OpenCode CLI:
+
+```bash
+opencode plugin add @gamflaz/opencode-todolist
+```
+
 OpenCode loads local plugins from the plugins directory, but it does not install
 their dependencies, so `bun install` is required before use.
 
 ## Tool: `manage_todo_list`
+
+#### Operation fields
+
+| Operation | Required fields                 | Optional fields                |
+| --------- | ------------------------------- | ------------------------------ |
+| `read`    | `operation`                     | None                           |
+| `write`   | `operation`, `todos`            | None; use `todos: []` to clear |
+| `update`  | `operation`, `id`, `status`     | `content`, `priority`, `note`  |
+
+For `update`, send `null` for `priority` or `note` to remove the existing value.
 
 ### Read
 
@@ -77,6 +93,21 @@ Clear the current list:
 { "operation": "write", "todos": [] }
 ```
 
+### Fields
+
+#### Todo item fields
+
+| Field      | Type                              | Required        | Description                                                               |
+| ---------- | --------------------------------- | --------------- | ------------------------------------------------------------------------- |
+| `id`       | number                            | Yes             | Root: positive integer. Child: `<root>.<n>`, such as `1.1`.              |
+| `content`  | string                            | Yes             | Task summary.                                                             |
+| `status`   | enum                              | Yes             | `pending`, `in_progress`, `completed`, `cancelled`, or `error`.           |
+| `priority` | `high` \| `medium` \| `low`       | No              | Optional priority label.                                                  |
+| `note`     | string                            | No              | Technical context or evidence.                                            |
+| `children` | array of child items              | No, root only   | Up to 9 subtasks. Child items cannot contain more children.               |
+
+Root IDs must be unique. A child ID must start with its parent root ID.
+
 ### Update
 
 `update` changes one existing root or subtask. Send only the fields that change;
@@ -91,7 +122,7 @@ Clear the current list:
 }
 ```
 
-Field values:
+### Fields
 
 | Field      | Required | Notes                                                        |
 | ---------- | -------- | ------------------------------------------------------------ |
@@ -100,36 +131,6 @@ Field values:
 | `content`  | No       | One-line summary shown in the widget.                         |
 | `note`     | No       | Technical context or evidence. Pass `null` to remove.         |
 | `priority` | No       | `high`, `medium`, or `low`. Pass `null` to remove.            |
-
-## Rules
-
-1. **One root at a time, in order.** Root `2` cannot start while root `1` is
-   still open. Finish or cancel root `1` first.
-2. **One active subtask per root.** Starting a second `in_progress` subtask is
-   rejected until the first one finishes or is cancelled.
-3. **Forward-only progress.** `in_progress` never returns to `pending`, and
-   `completed` or `cancelled` items are locked.
-4. **Error exception.** A root that reports `error` may be fixed early, but only
-   that root and its own subtasks; every other root still waits its turn.
-5. **Evidence in `note`.** Record what was verified before marking an item
-   `completed`.
-
-Every response reports progress, the next step, and any status transitions, for
-example:
-
-```text
-Todos (2/4) updated. Next: 2 "Write tests". Continue immediately.
-```
-
-## TUI widget
-
-The widget sits above the session composer:
-
-- Collapsed view shows the progress count and the active item.
-- Expand it to see every task; long lists scroll.
-- `↻ Continue` asks the session to resume the next open item with a short
-  summary of what remains.
-- `✕` clears the list.
 
 ## Skills
 
