@@ -15,14 +15,18 @@ OpenCode plugin providing a hierarchical todo list engine (`manage_todo_list` to
 All commands should be executed with Bun:
 
 - **Typecheck**: `bun run typecheck` (`tsc --noEmit`)
-- **Run all checks**: `bun run check` (runs typecheck then main test)
+- **Run all checks**: `bun run check` (typecheck then every test suite)
 - **Compile build artifacts**: `bun run compile` (`tsc -p tsconfig.build.json && node scripts/build-jsx.mjs`)
-- **Run core todo test**: `bun test/todo.test.ts`
+- **Run icon/reactivity test**: `bun test/icon.test.ts`
 - **Run skill parser tests**: `bun test/skill.test.ts`
 - **Run skill content/schema test**: `bun test/skill.folder.test.ts`
-- **Run full test suite**: `bun test/todo.test.ts && bun test/skill.test.ts && bun test/skill.folder.test.ts`
+- **Run core todo test**: `bun test/todo.test.ts` (currently fully commented out)
 
 > **Note on test runner**: Do not use `bun test test/*.test.ts` as test files use Node's `node:assert` and custom runners rather than Bun's native BDD describe blocks. Execute test files directly with `bun <file>`.
+
+> **`test/icon.test.ts` requires a fresh build.** It asserts against
+> `dist/icons/svg-icon.js`, so run `bun run compile` before it. It also fails if
+> any component destructures its props, which silently breaks Solid reactivity.
 
 ## Build Artifacts & Git Distribution
 

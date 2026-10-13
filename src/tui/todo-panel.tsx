@@ -403,7 +403,9 @@ export function TodoProgress(props: {
   context: Plugin.Context;
   sessionID: string;
 }) {
-  const { context } = props;
+  // `context` is a stable reference for the lifetime of the plugin, so reading
+  // it once is safe. Reactive props below are read through accessors instead.
+  const context = props.context;
   const sessionID = () => props.sessionID ?? "";
   const theme = () => context.theme;
 
@@ -606,7 +608,7 @@ export function TodoProgress(props: {
               flexGrow={1}
               onMouseDown={(e) => {
                 if (e.button === 0) {
-                  e.stopPropagation?.();
+                  e.stopPropagation();
                   setIsCollapsed((v) => !v);
                 }
               }}
