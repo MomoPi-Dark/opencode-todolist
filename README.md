@@ -21,8 +21,10 @@ git clone https://github.com/MomoPi-Dark/opencode-todolist.git \
   ~/.config/opencode/plugins/todolist
 cd ~/.config/opencode/plugins/todolist
 bun install
-bun run build
 ```
+
+`bun install` runs the `prepare` script, which compiles `dist/` from `src/`
+(TypeScript declarations plus Solid-compiled JSX). No extra step is required.
 
 Or add it directly through the OpenCode CLI:
 
@@ -30,8 +32,9 @@ Or add it directly through the OpenCode CLI:
 opencode plugin add @gamflaz/opencode-todolist
 ```
 
-OpenCode loads local plugins from the plugins directory, but it does not install
-their dependencies, so `bun install` is required before use.
+The npm package ships the prebuilt `dist/`, so no local build runs. OpenCode
+loads local plugins from the plugins directory but does not install their
+dependencies, so `bun install` is required before use.
 
 ## Tool: `manage_todo_list`
 
@@ -141,11 +144,23 @@ tracked work.
 ## Development
 
 ```bash
-bun install
+bun install     # runs prepare -> compiles dist/
 bun run check   # typecheck + tests
-bun run build   # compile the plugin entrypoints
+bun run compile # rebuild dist/ (tsc + Solid JSX transform)
 ```
+
+`bun run compile` must be used instead of `bun run build`: the raw `tsc` pass
+alone leaves intermediate `.jsx` files in `dist/`, which Bun then prefers over
+the compiled `.js` and reports as `No renderer found` / `ENOENT ... dist/tui.jsx`.
 
 ## Publishing notes
 
-Do not commit environment files, local dependencies, or generated build output.
+`dist/`, `index.js`, and `tui.js` are generated build output and are not
+committed. They reach users through the npm tarball: npm runs `prepare`
+(`bun run compile`) before packing, and `files` ships the built `dist/`
+directory. The `opencode plugin add` installer skips lifecycle scripts
+(`ignoreScripts: true`), so the tarball — not a post-install build — must
+contain `dist/`.
+
+Before publishing, run `bun run check && bun run compile` and confirm
+`dist/` contains no `.jsx` files.

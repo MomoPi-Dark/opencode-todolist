@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui";
-import { ColorInput, ScrollBoxRenderable } from "@opentui/core";
+import { type ColorInput, ScrollBoxRenderable } from "@opentui/core";
 import { mkdirSync, watch } from "node:fs";
 import {
   createEffect,
@@ -17,7 +17,7 @@ import {
   continuePromptSvgIcon,
   removeSvgIcon,
 } from "../icons/svg-icons";
-import { StatusLabel, TodoStatus } from "../schemas/status";
+import { StatusLabel, type TodoStatus } from "../schemas/status";
 import {
   getTodosDirectory,
   hashSessionID,
@@ -27,11 +27,11 @@ import {
 import {
   getTodoDisplaySummary,
   hasOpenTodos,
-  TodoDisplaySummary,
+  type TodoDisplaySummary,
 } from "../todos/display";
 import { TodoTree } from "../todos/todo-tree";
-import { shorten } from "./text";
 import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "./layout";
+import { shorten } from "./text";
 
 /** How many open items the Continue prompt lists before collapsing the rest. */
 export const CONTINUE_PROMPT_MAX_ITEMS = 3;
@@ -238,21 +238,23 @@ export function TodoList(props: {
   const scrollbarOptions = () =>
     props.scrollbarColor
       ? {
-          trackOptions: {
-            backgroundColor: props.scrollbarColor,
-            foregroundColor: props.scrollbarColor,
+          verticalScrollbarOptions: {
+            trackOptions: {
+              backgroundColor: props.scrollbarColor,
+              foregroundColor: props.scrollbarColor,
+            },
           },
         }
-      : undefined;
+      : {};
 
   const isExpanded = (id: number) => (props.expandedIds ?? []).includes(id);
 
   return (
     <scrollbox
       ref={attach}
-      width="100%"
+      width="auto"
       height={Math.min(entries().length, TODO_PANEL_MAX_ROWS)}
-      verticalScrollbarOptions={scrollbarOptions()}
+      {...scrollbarOptions()}
       horizontalScrollbarOptions={{ visible: false }}
     >
       <box flexDirection="column" flexShrink={0}>

@@ -39,11 +39,18 @@ const writeIfChanged = async (path, content) => {
   return true;
 };
 
-// Rewrite relative imports like "./foo.tsx" / "./foo.jsx" to "./foo.js"
+// OpenCode's Bun loader must not guess between stale .jsx and runtime .js files.
 const rewriteSpecifiers = (code) =>
   code.replace(
-    /(from\s+|import\s*\(\s*|import\s+)(["'])(\.{1,2}\/[^"']+?)\.[jt]sx\2/g,
-    "$1$2$3.js$2",
+    /(from\s+|import\s*\(\s*|import\s+)(["'])(\.{1,2}\/[^"']+)(\2)/g,
+    (_, prefix, quote, specifier) => {
+      const rewritten = /\.[cm]?[jt]sx?$/.test(specifier)
+        ? specifier.replace(/\.[cm]?[jt]sx?$/, ".js")
+        : /\.[^/]+$/.test(specifier)
+          ? specifier
+          : `${specifier}.js`;
+      return `${prefix}${quote}${rewritten}${quote}`;
+    },
   );
 
 const entries = await readdir(srcDir, { recursive: true });
@@ -68,12 +75,31 @@ await Promise.all(
       rewriteSpecifiers(transformed),
     );
 
+    await rm(output.replace(/\.js$/, ".jsx"), { force: true });
+    await rm(output.replace(/\.js$/, ".jsx.map"), { force: true });
     await rm(`${output}.map`, { force: true });
 
     if (changed) {
       changedCount++;
       console.log(`✓ ${relative(root, source)} → ${relative(root, output)}`);
     }
+  }),
+);
+
+// tsc emits ordinary .ts modules with extensionless imports too. Rewrite the
+// complete output tree, not only files that originally contained JSX.
+const builtFiles = (await readdir(outDir, { recursive: true }))
+  .filter((file) => extname(file) === ".js")
+  .sort();
+
+await Promise.all(
+  builtFiles.map(async (file) => {
+    const output = join(outDir, file);
+    const code = await readFile(output, "utf8");
+    const rewritten = rewriteSpecifiers(code);
+    if (rewritten === code) return;
+    await writeIfChanged(output, rewritten);
+    changedCount++;
   }),
 );
 
@@ -85,7 +111,7 @@ for (const name of ["index", "tui"]) {
   const wrapper = join(root, `${name}.js`);
   const changed = await writeIfChanged(
     wrapper,
-    `export { default } from "./dist/${name}";`,
+    `export { default } from "./dist/${name}.js";`,
   );
 
   if (changed) {
