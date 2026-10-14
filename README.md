@@ -8,6 +8,7 @@ plus a TUI widget above the composer that shows progress in real time.
 - Hierarchical tasks: any number of root tasks, each with up to 9 subtasks.
 - Numeric IDs only: root `1`, `2`, … and subtasks `1.1`, `1.2`, … (`1.9` max).
 - Small partial updates: change one item without resending the whole list.
+- Scoped reads: pull the whole list, one branch, or a single item.
 - Strict forward-only progress with enforced order between root tasks.
 - Real-time TUI widget with collapse, scroll, `↻ Continue`, and clear controls.
 - Bundled skills that teach the agent how to drive the tool.
@@ -40,21 +41,35 @@ dependencies, so `bun install` is required before use.
 
 #### Operation fields
 
-| Operation | Required fields                 | Optional fields                |
-| --------- | ------------------------------- | ------------------------------ |
-| `read`    | `operation`                     | None                           |
-| `write`   | `operation`, `todos`            | None; use `todos: []` to clear |
-| `update`  | `operation`, `id`, `status`     | `content`, `priority`, `note`  |
+| Operation | Required fields             | Optional fields                |
+| --------- | --------------------------- | ------------------------------ |
+| `read`    | `operation`                 | `scope`, `target`              |
+| `write`   | `operation`, `todos`        | None; use `todos: []` to clear |
+| `update`  | `operation`, `id`, `status` | `content`, `priority`, `note`  |
 
 For `update`, send `null` for `priority` or `note` to remove the existing value.
 
 ### Read
 
+By default `read` returns the whole list. An optional `scope` narrows it to one
+branch or one row, which keeps the response small on a long list.
+
+| `scope`    | `target`            | Returns                                      |
+| ---------- | ------------------- | -------------------------------------------- |
+| `all`      | —                   | the whole list (default)                     |
+| `root`     | a root id, e.g. `1` | that root and all of its subtasks            |
+| `children` | a subtask id, `1.1` | that subtask, with its root shown as context |
+| `item`     | `1` or `1.1`        | only that row                                |
+
+`target` is only valid together with `scope: "root"`, `"children"`, or
+`"item"` — passing it without one is rejected, so a scope can never be silently
+ignored.
+
+The whole list:
+
 ```json
 { "operation": "read" }
 ```
-
-Returns the current list as a progress tree:
 
 ```text
 [~] 1. Design architecture (1/2)
@@ -64,8 +79,34 @@ Returns the current list as a progress tree:
 [ ] 2. Write tests
 ```
 
+One branch (`root`):
+
+```json
+{ "operation": "read", "scope": "root", "target": 1 }
+```
+
+A single subtask, with its root as context (`children`):
+
+```json
+{ "operation": "read", "scope": "children", "target": 1.2 }
+```
+
+```text
+[~] 1. Design architecture (1/2)
+    [~] 1.2 API endpoints
+```
+
+One row with no context (`item`):
+
+```json
+{ "operation": "read", "scope": "item", "target": 1.2 }
+```
+
 Markers: `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]` cancelled,
 `[!]` error. Notes render under their item as `↳ note: …`.
+
+Even when a scope hides rows, the root keeps its real `(completed/total)` count —
+only the display is narrowed.
 
 ### Write
 
@@ -100,14 +141,14 @@ Clear the current list:
 
 #### Todo item fields
 
-| Field      | Type                              | Required        | Description                                                               |
-| ---------- | --------------------------------- | --------------- | ------------------------------------------------------------------------- |
-| `id`       | number                            | Yes             | Root: positive integer. Child: `<root>.<n>`, such as `1.1`.              |
-| `content`  | string                            | Yes             | Task summary.                                                             |
-| `status`   | enum                              | Yes             | `pending`, `in_progress`, `completed`, `cancelled`, or `error`.           |
-| `priority` | `high` \| `medium` \| `low`       | No              | Optional priority label.                                                  |
-| `note`     | string                            | No              | Technical context or evidence.                                            |
-| `children` | array of child items              | No, root only   | Up to 9 subtasks. Child items cannot contain more children.               |
+| Field      | Type                        | Required      | Description                                                     |
+| ---------- | --------------------------- | ------------- | --------------------------------------------------------------- |
+| `id`       | number                      | Yes           | Root: positive integer. Child: `<root>.<n>`, such as `1.1`.     |
+| `content`  | string                      | Yes           | Task summary.                                                   |
+| `status`   | enum                        | Yes           | `pending`, `in_progress`, `completed`, `cancelled`, or `error`. |
+| `priority` | `high` \| `medium` \| `low` | No            | Optional priority label.                                        |
+| `note`     | string                      | No            | Technical context or evidence.                                  |
+| `children` | array of child items        | No, root only | Up to 9 subtasks. Child items cannot contain more children.     |
 
 Root IDs must be unique. A child ID must start with its parent root ID.
 
@@ -129,11 +170,11 @@ Root IDs must be unique. A child ID must start with its parent root ID.
 
 | Field      | Required | Notes                                                        |
 | ---------- | -------- | ------------------------------------------------------------ |
-| `id`       | Yes      | Root number or subtask number (`1`, `1.1`).                   |
-| `status`   | Yes      | `pending`, `in_progress`, `completed`, `cancelled`, `error`.  |
-| `content`  | No       | One-line summary shown in the widget.                         |
-| `note`     | No       | Technical context or evidence. Pass `null` to remove.         |
-| `priority` | No       | `high`, `medium`, or `low`. Pass `null` to remove.            |
+| `id`       | Yes      | Root number or subtask number (`1`, `1.1`).                  |
+| `status`   | Yes      | `pending`, `in_progress`, `completed`, `cancelled`, `error`. |
+| `content`  | No       | One-line summary shown in the widget.                        |
+| `note`     | No       | Technical context or evidence. Pass `null` to remove.        |
+| `priority` | No       | `high`, `medium`, or `low`. Pass `null` to remove.           |
 
 ## Skills
 
@@ -152,15 +193,3 @@ bun run compile # rebuild dist/ (tsc + Solid JSX transform)
 `bun run compile` must be used instead of `bun run build`: the raw `tsc` pass
 alone leaves intermediate `.jsx` files in `dist/`, which Bun then prefers over
 the compiled `.js` and reports as `No renderer found` / `ENOENT ... dist/tui.jsx`.
-
-## Publishing notes
-
-`dist/`, `index.js`, and `tui.js` are generated build output and are not
-committed. They reach users through the npm tarball: npm runs `prepare`
-(`bun run compile`) before packing, and `files` ships the built `dist/`
-directory. The `opencode plugin add` installer skips lifecycle scripts
-(`ignoreScripts: true`), so the tarball — not a post-install build — must
-contain `dist/`.
-
-Before publishing, run `bun run check && bun run compile` and confirm
-`dist/` contains no `.jsx` files.
