@@ -558,10 +558,14 @@ const SID = "ses_storage_test";
     await writeTodos(SID, [{ id: 1, content: "init", status: "in_progress" }]);
 
     const worker = join(DATA_DIR, "worker.ts");
+    // The worker must import the store by a path that exists wherever the suite
+    // runs, so it is derived from this file's own location instead of a
+    // machine-specific absolute path. `import.meta.dirname` is `test/`.
+    const storeURL = new URL("../src/storage/todo-store.ts", import.meta.url).href;
     writeFileSync(
         worker,
         [
-            'const S = await import("/home/gamflaz/.config/opencode/plugins/todolist/src/storage/todo-store.ts");',
+            `const S = await import(${JSON.stringify(storeURL)});`,
             "const tag = process.argv[2];",
             "for (let i = 0; i < 10; i++) {",
             "  await S.updateTodos(process.env.SID, (cur) => {",
@@ -578,7 +582,21 @@ const SID = "ses_storage_test";
     const processes = ["A", "B", "C"].map((tag) =>
         Bun.spawn(["bun", worker], { env, stdout: "pipe", stderr: "pipe" }),
     );
-    await Promise.all(processes.map((process) => process.exited));
+    const exits = await Promise.all(
+        processes.map(async (process) => ({
+            code: await process.exited,
+            stderr: await new Response(process.stderr).text(),
+        })),
+    );
+    // Without this, a worker that fails to start shows up only as a confusing
+    // revision mismatch further down.
+    for (const [i, result] of exits.entries()) {
+        assert.equal(
+            result.code,
+            0,
+            `worker ${["A", "B", "C"][i]} exited with ${result.code}: ${result.stderr}`,
+        );
+    }
 
     assert.equal(
         getRevision(SID),
