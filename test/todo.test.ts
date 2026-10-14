@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import {
     assertWriteIsInitialization,
-    formatReadOutput,
     formatUpdateOutput,
-    selectReadScope,
 } from "../src/index";
+import { formatReadOutput, selectReadScope } from "../src/todos/read";
 import {
     TodoInputToolSchema,
     TodoOutputToolSchema,

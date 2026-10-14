@@ -94,7 +94,7 @@ export function parseLegacyTodos(raw: string): TodoRootItem[] {
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new InvalidTodoDataError(
-      `[todo store read failed] invalid todo data: ${error instanceof Error ? error.message : String(error)}`,
+      `invalid todo data: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
@@ -104,15 +104,13 @@ export function parseLegacyTodos(raw: string): TodoRootItem[] {
       ? (parsed as { todos: unknown }).todos
       : undefined;
   if (!Array.isArray(list)) {
-    throw new InvalidTodoDataError(
-      "[todo store read failed] invalid todo data: todo list is missing",
-    );
+    throw new InvalidTodoDataError("invalid todo data: todo list is missing");
   }
 
   const result = TodoListSchema.safeParse(list);
   if (!result.success) {
     throw new InvalidTodoDataError(
-      `[todo store read failed] invalid todo data: ${result.error.issues
+      `invalid todo data: ${result.error.issues
         .map((issue) => issue.message)
         .join(", ")}`,
     );

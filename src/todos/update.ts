@@ -66,7 +66,7 @@ function assertForwardTransition(
   if (from === to) return;
   if (!(FORWARD_TRANSITIONS[from] ?? []).includes(to)) {
     throw new Error(
-      `[manage_todo_list] todo ${id} cannot move from '${from}' to '${to}'. Progress only moves forward; use 'error' to report a failure and fix it from there.`,
+      `todo ${id} cannot move from '${from}' to '${to}'. Progress only moves forward; use 'error' to report a failure and fix it from there.`,
     );
   }
 }
@@ -105,13 +105,13 @@ export function assertSequentialScope(
       root.children?.some((child) => child.id === input.id),
   );
   if (!targetRoot) {
-    throw new Error(`[manage_todo_list] todo id ${input.id} was not found`);
+    throw new Error(`todo id ${input.id} was not found`);
   }
 
   const firstOpen = todos.findIndex((root) => !isFinal(root.status));
   if (firstOpen === -1) {
     throw new Error(
-      "[manage_todo_list] every todo is already finished; nothing can be updated.",
+      "every todo is already finished; nothing can be updated.",
     );
   }
 
@@ -128,13 +128,11 @@ export function assertSequentialScope(
       ? targetRoot
       : targetRoot.children?.find((child) => child.id === input.id);
   if (!target) {
-    throw new Error(`[manage_todo_list] todo id ${input.id} was not found`);
+    throw new Error(`todo id ${input.id} was not found`);
   }
 
   if (isFinal(target.status)) {
-    throw new Error(
-      `[manage_todo_list] todo ${input.id} is '${target.status}' and final; it cannot be changed.`,
-    );
+    throw new Error(`todo ${input.id} is '${target.status}' and final; it cannot be changed.`);
   }
 
   assertForwardTransition(target.status, input.status, input.id);
@@ -152,7 +150,7 @@ export function assertSequentialScope(
     );
     if (busyChild) {
       throw new Error(
-        `[manage_todo_list] subtask ${busyChild.id} is still in_progress. Finish it (or cancel it) before starting ${input.id}.`,
+        `subtask ${busyChild.id} is still in_progress. Finish it (or cancel it) before starting ${input.id}.`,
       );
     }
   }
@@ -204,7 +202,7 @@ export function updateTodoById(
   });
 
   if (!updated) {
-    throw new Error(`[manage_todo_list] todo id ${input.id} was not found`);
+    throw new Error(`todo id ${input.id} was not found`);
   }
 
   return { todos: nextTodos, updated };

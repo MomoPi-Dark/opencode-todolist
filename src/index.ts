@@ -2,7 +2,6 @@ import { Plugin } from "@opencode/plugin";
 import {
   TodoInputToolSchema,
   TodoOutputToolSchema,
-  type TodoReadInput,
   type TodoRootItem,
 } from "./schemas/todo";
 import { registerTodoSkills } from "./skills/loader";
@@ -15,21 +14,9 @@ import {
   flattenLeaves,
   isAnyTodoActive,
 } from "./todos/hint";
+import { runReadOperation } from "./todos/read";
 import { TodoTree } from "./todos/todo-tree";
 import { updateTodoById } from "./todos/update";
-
-export function formatReadOutput(
-  todos: readonly TodoRootItem[],
-  options?: { visibleIds?: readonly number[] },
-): string {
-  if (todos.length === 0) return "No todos recorded.";
-
-  const tree = new TodoTree(todos).render(options);
-  const check = new TodoTree(todos).validateAndNormalize();
-  if (check.valid) return tree;
-
-  return `Warning: the stored list needs fixing — ${check.error}\n${tree}`;
-}
 
 export function formatTransitionLines(
   before: readonly TodoRootItem[],
@@ -97,7 +84,7 @@ export function assertWriteIsInitialization(
 ): void {
   if (existing.length > 0 && incoming.length > 0) {
     const messages = [
-      '[manage_todo_list] Invalid operation: "write".',
+      'Invalid operation: "write".',
       "",
       'The "write" operation is only allowed during initialization.',
       'Use "update" to modify an existing todo list.',
@@ -120,47 +107,6 @@ export function formatUpdateOutput(
   );
 }
 
-/**
- * Narrows a list for a scoped read.
- *
- * - `scope: "root"` returns one root with every subtask, so the whole branch is
- *   visible.
- * - `scope: "children"` prints the root line as context plus the targeted
- *   subtask line, matching a "show me this subtask within its root" read.
- * - `scope: "item"` prints only the targeted row.
- *
- * Either way the root keeps every subtask in the *data*, because the root's
- * `(completed/total)` label is computed from them — dropping them would
- * silently turn `(2/2)` into `(1/1)`.
- */
-export function selectReadScope(
-  todos: readonly TodoRootItem[],
-  input: TodoReadInput,
-): { todos: TodoRootItem[]; visibleIds?: readonly number[] } {
-  if (input.scope !== "item" && input.scope !== "children" && input.scope !== "root") {
-    return { todos: [...todos] };
-  }
-
-  const target = input.target;
-  const rootId = Number.isInteger(target) ? target : Math.floor(target);
-  const root = todos.find((item) => item.id === rootId);
-  const child = Number.isInteger(target)
-    ? undefined
-    : root?.children?.find((item) => item.id === target);
-
-  if (!root || (!Number.isInteger(target) && !child)) {
-    throw new Error(`[manage_todo_list] todo id ${target} was not found`);
-  }
-
-  // `root` shows the branch as-is; it needs no row filter at all.
-  if (input.scope === "root") return { todos: [root] };
-
-  const visibleIds =
-    input.scope === "children" ? [rootId, target] : [target];
-
-  return { todos: [root], visibleIds };
-}
-
 export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
   await ctx.tool.transform((tools) => {
     tools.add({
@@ -179,7 +125,7 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
         const parsed = TodoInputToolSchema.safeParse(input);
         if (!parsed.success) {
           throw new Error(
-            `[manage_todo_list validation failed] ${parsed.error.issues
+            `Invalid manage_todo_list input: ${parsed.error.issues
               .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
               .join(", ")}`,
           );
@@ -187,12 +133,10 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
 
         if (parsed.data.operation === "read") {
           const todos = await readTodos(toolContext.sessionID);
-          const scoped = selectReadScope(todos, parsed.data);
+          const result = runReadOperation(todos, parsed.data);
           return {
-            output: { todos: scoped.todos },
-            content: formatReadOutput(scoped.todos, {
-              visibleIds: scoped.visibleIds,
-            }),
+            output: { todos: result.todos },
+            content: result.content,
           };
         }
 

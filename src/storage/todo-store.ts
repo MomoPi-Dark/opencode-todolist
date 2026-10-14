@@ -83,7 +83,7 @@ export class TodoStore {
   public static normalizeSessionID(sessionID: string): string {
     const normalized = sessionID.trim();
     if (!TodoStore.SESSION_ID_PATTERN.test(normalized)) {
-      throw new Error("[todo store] invalid session ID");
+      throw new Error("invalid session ID");
     }
     return normalized;
   }
@@ -372,7 +372,7 @@ export class TodoStore {
       if (!result.valid) {
         // Throwing inside the transaction rolls it back, so an invalid list
         // never reaches disk and never bumps the revision.
-        throw new Error(`[todo store validation failed] ${result.error}`);
+        throw new Error(result.error);
       }
       return result.data;
     }).todos;

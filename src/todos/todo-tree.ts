@@ -190,6 +190,11 @@ export class TodoTree {
   /**
    * Rejects completed parents with unfinished children, and auto-completes a
    * parent whose children are all completed.
+   *
+   * The order check runs **after** the auto-complete above, never before: a
+   * parent whose children all finished is raised to `completed` here, and that
+   * promotion can itself create an out-of-order list. Checking first would let
+   * the promotion slip past the check.
    */
   private normalize(): TodoValidationResult {
     const normalized: TodoRootItem[] = [];
@@ -224,7 +229,44 @@ export class TodoTree {
       });
     }
 
+    const orderError = TodoTree.findOrderError(normalized);
+    if (orderError) return { valid: false, error: orderError };
+
     return { valid: true, data: normalized };
+  }
+
+  /**
+   * Roots run in order, so nothing after the first unfinished root may be
+   * finished.
+   *
+   * Only `error` is allowed to follow an open root — a broken task has to be
+   * fixable even while earlier work is still open. Everything else
+   * (`completed`, `in_progress`, `cancelled`) has to wait its turn.
+   *
+   * This lives here rather than in `update.ts` because `write` and the legacy
+   * importer reach the database without passing the update rules at all. One
+   * check in the shared validator closes every path at once.
+   */
+  private static findOrderError(
+    todos: readonly TodoRootItem[],
+  ): string | null {
+    const isFinal = (status: TodoStatus) =>
+      status === "completed" || status === "cancelled";
+
+    let firstOpen: TodoRootItem | undefined;
+    for (const root of todos) {
+      if (!firstOpen) {
+        if (!isFinal(root.status)) firstOpen = root;
+        continue;
+      }
+
+      // Past the first open root: a later root must still be untouched.
+      if (root.status === "pending" || root.status === "error") continue;
+
+      return `Task '${root.id}' is '${root.status}' but earlier task '${firstOpen.id}' is still '${firstOpen.status}'. Roots run in order: finish or cancel '${firstOpen.id}' first.`;
+    }
+
+    return null;
   }
 
   // Rendering
