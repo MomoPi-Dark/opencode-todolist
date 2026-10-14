@@ -1,23 +1,50 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import {
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
-import * as lockfile from "proper-lockfile";
-import { TodoRootItemSchema, type TodoRootItem } from "../schemas/todo";
+import { eq } from "drizzle-orm";
+import type { TodoRootItem } from "../schemas/todo";
 import { TodoTree } from "../todos/todo-tree";
-import { InvalidTodoDataError } from "./errors";
+import {
+  getDatabase,
+  getDataVersion as readDataVersion,
+  resetDatabaseForTests,
+  resolveMigrationsFolder,
+  type TodoDatabaseHandle,
+} from "./db";
+import {
+  importLegacyJson,
+  mutateSessionTodos,
+  readRevision,
+  replaceSessionTodos,
+  selectTodos,
+} from "./migrate-json";
+import { todoSession } from "./schema";
 
 /**
- * Environment/OS context used to resolve storage locations. All fields are
- * optional so callers (and tests) can simulate any platform on any host.
+ * Per-session todo persistence on SQLite.
+ *
+ * Storage shape:
+ *
+ *   <base>/todos.db          one file, every session, partitioned by session_key
+ *   <base>/todos.db-wal      write-ahead log
+ *
+ * The public API is unchanged from the previous JSON implementation, so the
+ * tool, the hint builder, and the TUI widget keep working without edits. Only
+ * the storage engine moved.
+ *
+ * Why SQLite here:
+ * - `parent_id` becomes a real foreign key, so a subtask cannot dangle
+ * - a full-list write is one transaction, so a reader never sees a half list
+ * - `PRAGMA data_version` lets the TUI detect writes made by the other process
+ *
+ * The tool and the widget run in separate processes, so nothing is shared in
+ * memory and this file is the hand-off point.
+ */
+
+/**
+ * Environment/OS context used to resolve storage locations. Every field is
+ * optional so callers and tests can simulate any platform on any host.
  */
 export interface PlatformContext {
   platform?: NodeJS.Platform;
@@ -32,29 +59,18 @@ export interface TodoData {
   updated_at: string;
 }
 
-interface SessionFile {
-  path: string;
-  timestamp: number;
-}
+const FILE_NAME = "todos.db";
 
-/**
- * Per-session todo persistence.
- *
- * Layout (per session):
- *   <base>/s_<hash>/todos/todos-<timestamp>.json   todo payload (latest wins)
- *   <base>/s_<hash>/todos/version                  monotonically increasing version
- *   <base>/s_<hash>/todos/id                       hashed session folder name
- *   <base>/s_<hash>/todos/todos.lock               cross-process lock
- *   <base>/s_<hash>/todos/hint-marker.json         hint injection marker
- */
 export class TodoStore {
   private static readonly SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-  private static readonly FILE_PREFIX = "todos-";
-  private static readonly FILE_SUFFIX = ".json";
 
-  constructor(private readonly ctx: PlatformContext = {}) { }
+  private handle: TodoDatabaseHandle | undefined;
+  private importedBaseDir: string | undefined;
+
+  constructor(private readonly ctx: PlatformContext = {}) {}
 
   // Static helpers
+
   public static isMissingFile(error: unknown): boolean {
     return (
       typeof error === "object" &&
@@ -73,21 +89,34 @@ export class TodoStore {
   }
 
   /**
-   * Deterministic cryptographic hash of sessionID.
-   * Produces an opaque 32-character hexadecimal folder name prefixed with "s_".
-   * Prevents raw sessionIDs from leaking in the filesystem structure.
+   * Storage partition key for a session: the OpenCode session id verbatim.
+   *
+   * The id is already unique and `normalizeSessionID` already restricts it to
+   * `[A-Za-z0-9_-]`, so hashing it bought nothing and cost readability — a raw
+   * id can be traced back to a session by eye, a digest cannot.
    */
-  public static hashSessionID(sessionID: string): string {
+  public static sessionKey(sessionID: string): string {
+    return TodoStore.normalizeSessionID(sessionID);
+  }
+
+  /**
+   * The key older builds used for this session, kept so their rows still work.
+   *
+   * A SHA-256 digest cannot be reversed, so a stored hash can never be turned
+   * back into an id. It does not need to be: hashing is deterministic, so given
+   * the id we recompute the same digest and find the old row, which is what
+   * `resolveKey` does. A session that already has rows keeps its old key; only
+   * sessions that are new get the readable one.
+   */
+  public static legacyKey(sessionID: string): string {
     const normalized = TodoStore.normalizeSessionID(sessionID);
     const digest = createHash("sha256").update(normalized).digest("hex");
     return `s_${digest.slice(0, 32)}`;
   }
 
-  private static async setPrivateMode(
-    path: string,
-    mode: number,
-  ): Promise<void> {
-    if (process.platform !== "win32") await chmod(path, mode);
+  /** @deprecated Use {@link TodoStore.legacyKey}; kept for existing callers. */
+  public static hashSessionID(sessionID: string): string {
+    return TodoStore.legacyKey(sessionID);
   }
 
   // Platform / directory resolution
@@ -106,28 +135,16 @@ export class TodoStore {
       : posix.join(...parts);
   }
 
-  /**
-   * Cross-platform home directory resolution.
-   *
-   * `os.homedir()` already adapts to the OS, but it can return an empty string
-   * in stripped environments, and Windows shells sometimes expose a
-   * POSIX-style `HOME` (e.g. Git Bash `/c/Users/...`). We therefore prefer the
-   * canonical variable for the running platform before falling back.
-   *
-   * @see {@link https://nodejs.org/api/os.html#oshomedir}
-   */
   public resolveHomeDir(): string {
     const { env, platform } = this;
     if (this.ctx.home) return this.ctx.home;
 
     if (platform === "win32") {
-      // Windows: USERPROFILE is canonical; HOMEDRIVE+HOMEPATH is the legacy pair.
       if (env.USERPROFILE) return env.USERPROFILE;
       if (env.HOMEDRIVE && env.HOMEPATH)
         return `${env.HOMEDRIVE}${env.HOMEPATH}`;
       if (env.HOME) return env.HOME;
     } else {
-      // Linux, macOS, BSD, etc.
       if (env.HOME) return env.HOME;
       if (env.USERPROFILE) return env.USERPROFILE;
     }
@@ -139,19 +156,8 @@ export class TodoStore {
     }
   }
 
-  /**
-   * Platform-native base directory for user configuration/data.
-   *
-   * - Windows : `%APPDATA%` (fallback `%LOCALAPPDATA%` → `~/AppData/Roaming`)
-   * - macOS   : `~/Library/Application Support`
-   * - Linux   : `$XDG_CONFIG_HOME` (fallback `~/.config`)
-   *
-   * `XDG_CONFIG_HOME` is honored first on every platform so users who prefer an
-   * XDG layout (including those running OpenCode's own convention) can force it.
-   */
   public resolveConfigHome(): string {
     const { env, platform } = this;
-
     if (env.XDG_CONFIG_HOME) return env.XDG_CONFIG_HOME;
 
     if (platform === "win32") {
@@ -172,36 +178,37 @@ export class TodoStore {
   }
 
   /**
-   * Base directory that stores per-session todo folders.
+   * Base directory holding the database and the legacy session folders.
    *
    * Priority:
-   *   1. `OPENCODE_TODOS_DIR` — explicit plugin override (tests/tooling).
-   *   2. The user's home directory + `.opencode/sessions`.
+   *   1. `OPENCODE_TODOS_DIR` — explicit override for tests and tooling.
+   *   2. `<home>/.opencode/sessions`
    */
   public resolveTodosBaseDir(): string {
     if (this.env.OPENCODE_TODOS_DIR) return this.env.OPENCODE_TODOS_DIR;
     return this.joinForPlatform(this.resolveHomeDir(), ".opencode", "sessions");
   }
 
-  /** Base directory for all sessions (replaces the old `TODOS_DIRECTORY` const). */
   get todosRoot(): string {
     return this.getTodosDirectory();
   }
 
-  // Path getters
+  public getDatabasePath(): string {
+    return this.joinForPlatform(this.resolveTodosBaseDir(), FILE_NAME);
+  }
 
+  /**
+   * Legacy per-session directory.
+   *
+   * No longer written to. Kept because it is still read once to import old JSON
+   * and because the TUI watches this directory for filesystem changes.
+   */
   public getSessionDirectory(sessionID: string): string {
     const baseDir = this.resolveTodosBaseDir();
     const safeSessionID = TodoStore.normalizeSessionID(sessionID);
     const hashedDir = join(baseDir, TodoStore.hashSessionID(safeSessionID));
-
-    // Backward compatibility: if an unhashed legacy directory exists, prefer it
-    // until it gets migrated or used.
     const legacyDir = join(baseDir, safeSessionID);
-    if (!existsSync(hashedDir) && existsSync(legacyDir)) {
-      return legacyDir;
-    }
-
+    if (!existsSync(hashedDir) && existsSync(legacyDir)) return legacyDir;
     return hashedDir;
   }
 
@@ -211,100 +218,134 @@ export class TodoStore {
     return join(this.getSessionDirectory(sessionID), "todos");
   }
 
-  public getTodoLockPath(sessionID: string): string {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    return join(this.getTodosDirectory(safeSessionID), "todos.lock");
-  }
-
+  /**
+   * Path of the legacy hint marker.
+   *
+   * The marker now lives in `todo_session.hint_revision`, so nothing writes
+   * here. The path is still exposed because callers may need to locate and
+   * clean up a leftover file from an older install.
+   */
   public getHintMarkerPath(sessionID: string): string {
     const safeSessionID = TodoStore.normalizeSessionID(sessionID);
     return join(this.getTodosDirectory(safeSessionID), "hint-marker.json");
   }
 
-  public getSessionIDFilePath(sessionID: string): string {
-    return join(
-      this.getTodosDirectory(TodoStore.normalizeSessionID(sessionID)),
-      "id",
-    );
+  // Connection
+
+  private database(): TodoDatabaseHandle {
+    if (!this.handle) {
+      this.handle = getDatabase(this.getDatabasePath());
+    }
+    // Import legacy JSON once per base directory for this process.
+    const baseDir = this.resolveTodosBaseDir();
+    if (this.importedBaseDir !== baseDir) {
+      importLegacyJson(this.handle, baseDir);
+      this.importedBaseDir = baseDir;
+    }
+    return this.handle;
   }
 
-  public getVersionFilePath(sessionID: string): string {
-    return join(
-      this.getTodosDirectory(TodoStore.normalizeSessionID(sessionID)),
-      "version",
-    );
+  private key(sessionID: string): string {
+    return TodoStore.sessionKey(sessionID);
   }
 
-  public getTodoFilePath(sessionID: string): string {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    return (
-      this.listSessionFiles(safeSessionID)[0]?.path ??
-      join(this.getTodosDirectory(safeSessionID), `todos-${Date.now()}.json`)
-    );
+  /**
+   * Resolves the key a session's rows currently live under.
+   *
+   * Prefers the real session id. A session first written by an older build
+   * still sits under its hashed key, so that is checked as a fallback — without
+   * it, upgrading would look like every todo list had vanished.
+   */
+  private resolveKey(sessionID: string): string {
+    const handle = this.database();
+    const key = this.key(sessionID);
+    const found = handle.db
+      .select({ sessionKey: todoSession.sessionKey })
+      .from(todoSession)
+      .where(eq(todoSession.sessionKey, key))
+      .get();
+    if (found) return key;
+
+    const legacy = TodoStore.legacyKey(sessionID);
+    const legacyFound = handle.db
+      .select({ sessionKey: todoSession.sessionKey })
+      .from(todoSession)
+      .where(eq(todoSession.sessionKey, legacy))
+      .get();
+    return legacyFound ? legacy : key;
   }
 
   // Public read API
 
+  /**
+   * Reads a session's list.
+   *
+   * Synchronous at its core because `bun:sqlite` is synchronous; the `async`
+   * signature is kept so existing callers do not need to change.
+   */
   public async readTodos(sessionID: string): Promise<TodoRootItem[]> {
-    const filePath = this.getTodoFilePath(sessionID);
-    try {
-      return TodoStore.parseTodoFile(await readFile(filePath, "utf8"));
-    } catch (error) {
-      return this.recoverFromReadError(error);
-    }
+    return this.readTodosSync(sessionID);
   }
 
   public readTodosSync(sessionID: string): TodoRootItem[] {
-    const filePath = this.getTodoFilePath(sessionID);
-    try {
-      return TodoStore.parseTodoFile(readFileSync(filePath, "utf8"));
-    } catch (error) {
-      return this.recoverFromReadError(error);
-    }
+    return selectTodos(this.database().db, this.resolveKey(sessionID));
   }
 
   public readTodoData(sessionID: string): TodoData | null {
-    try {
-      const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-      const raw = readFileSync(this.getTodoFilePath(safeSessionID), "utf8");
+    const handle = this.database();
+    const key = this.resolveKey(sessionID);
 
-      const parsed: unknown = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return null;
+    const session = handle.db
+      .select()
+      .from(todoSession)
+      .where(eq(todoSession.sessionKey, key))
+      .get();
+    if (!session) return null;
 
-      const data = parsed as Record<string, unknown>;
-      const todos = (
-        Array.isArray(data.todos)
-          ? data.todos
-          : Array.isArray(parsed)
-            ? parsed
-            : []
-      ) as TodoRootItem[];
-      const legacyVersion =
-        typeof data.version === "number" && Number.isSafeInteger(data.version)
-          ? data.version
-          : 0;
-      const legacyCreatedAt =
-        typeof data.createdAt === "string" ? data.createdAt : undefined;
-      const legacyUpdatedAt =
-        typeof data.updatedAt === "string" ? data.updatedAt : undefined;
-      const updated_at =
-        typeof data.updated_at === "string"
-          ? data.updated_at
-          : (legacyUpdatedAt ?? new Date().toISOString());
-      const created_at =
-        typeof data.created_at === "string"
-          ? data.created_at
-          : (legacyCreatedAt ?? legacyUpdatedAt ?? updated_at);
+    const todos = selectTodos(handle.db, key);
+    return {
+      version: session.revision,
+      todos,
+      created_at: session.createdAt,
+      updated_at: session.updatedAt,
+    };
+  }
 
-      return {
-        version: this.readVersionFile(safeSessionID) ?? legacyVersion,
-        todos,
-        created_at,
-        updated_at,
-      };
-    } catch {
-      return null;
+  /** Revision counter, used by the TUI to detect changes cheaply. */
+  public getRevision(sessionID: string): number {
+    return readRevision(this.database(), this.resolveKey(sessionID));
+  }
+
+  /**
+   * Reads the hint marker value and, when it is stale, records the new
+   * revision. Returns the previous revision so the caller can decide.
+   */
+  public takeHintRevision(sessionID: string, currentRevision: number): number {
+    const handle = this.database();
+    const key = this.resolveKey(sessionID);
+    const session = handle.db
+      .select({ hintRevision: todoSession.hintRevision })
+      .from(todoSession)
+      .where(eq(todoSession.sessionKey, key))
+      .get();
+    const previous = session?.hintRevision ?? 0;
+    if (previous !== currentRevision) {
+      handle.db
+        .update(todoSession)
+        .set({ hintRevision: currentRevision })
+        .where(eq(todoSession.sessionKey, key))
+        .run();
     }
+    return previous;
+  }
+
+  /** Cross-process change signal for the TUI watcher. */
+  public getDataVersion(): number {
+    return readDataVersion(this.database().sqlite);
+  }
+
+  public migrationsFolder(): string {
+    return resolveMigrationsFolder();
   }
 
   // Public write API
@@ -320,238 +361,59 @@ export class TodoStore {
     sessionID: string,
     update: (todos: TodoRootItem[]) => TodoRootItem[],
   ): Promise<TodoRootItem[]> {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    const baseDir = this.getTodosDirectory();
-    const legacyDir = join(baseDir, safeSessionID);
-    const targetDir = join(baseDir, TodoStore.hashSessionID(safeSessionID));
+    const handle = this.database();
+    const key = this.resolveKey(sessionID);
 
-    // Migrate legacy plaintext directories to hashed ones.
-    if (existsSync(legacyDir) && !existsSync(targetDir)) {
-      try {
-        await rename(legacyDir, targetDir);
-      } catch {
-        // Fallback: if rename fails (e.g. cross-device), continue using legacyDir
-      }
-    }
-
-    const sessionRoot = this.getSessionDirectory(safeSessionID);
-    const sessionDir = this.getTodosDirectory(safeSessionID);
-    await mkdir(sessionDir, { recursive: true });
-    await TodoStore.setPrivateMode(sessionRoot, 0o700);
-    await TodoStore.setPrivateMode(sessionDir, 0o700);
-    await this.migrateFlatTodoFiles(sessionRoot, sessionDir);
-
-    const release = await lockfile.lock(this.getTodoFilePath(safeSessionID), {
-      realpath: false,
-      lockfilePath: this.getTodoLockPath(safeSessionID),
-      retries: { retries: 10, minTimeout: 10, maxTimeout: 250 },
-      stale: 10_000,
-    });
-
-    try {
-      const filePath = this.getTodoFilePath(safeSessionID);
-      let current: TodoRootItem[];
-
-      try {
-        current = await this.readTodos(safeSessionID);
-      } catch (error) {
-        if (!(error instanceof InvalidTodoDataError)) throw error;
-
-        // Archive the corrupt file and start from an empty list.
-        const archivedPath = `${filePath}.corrupt-${Date.now()}`;
-        const archived = await rename(filePath, archivedPath).then(
-          () => true,
-          () => false,
-        );
-        if (archived) await TodoStore.setPrivateMode(archivedPath, 0o600);
-        current = [];
-      }
-
+    // One transaction covers read, transform, and write. Splitting them would
+    // allow a lost update when the tool process and the widget process write
+    // concurrently: both could read revision N and then both write N+1.
+    return mutateSessionTodos(handle, key, (current) => {
       const result = new TodoTree(update(current)).validateAndNormalize();
       if (!result.valid) {
+        // Throwing inside the transaction rolls it back, so an invalid list
+        // never reaches disk and never bumps the revision.
         throw new Error(`[todo store validation failed] ${result.error}`);
       }
-
-      const existingData = this.readTodoData(safeSessionID);
-      const now = new Date().toISOString();
-      const nextVersion = (existingData?.version ?? 0) + 1;
-      const payload: Omit<TodoData, "version"> = {
-        created_at: existingData?.created_at ?? now,
-        updated_at: now,
-        todos: result.data,
-      };
-
-      await this.writeJsonAtomically(filePath, payload);
-      await this.writeTextAtomically(
-        this.getVersionFilePath(safeSessionID),
-        `${nextVersion}\n`,
-      );
-      await this.writeTextAtomically(
-        this.getSessionIDFilePath(safeSessionID),
-        `${TodoStore.hashSessionID(safeSessionID)}\n`,
-      );
-      await rm(join(sessionDir, "session.json"), { force: true });
-      await rm(join(sessionRoot, "session.json"), { force: true });
-
       return result.data;
-    } finally {
-      await release();
-    }
+    }).todos;
   }
 
-  // Internals
-
-  private scanTodoFiles(directory: string, prefix: string): SessionFile[] {
-    const suffix = TodoStore.FILE_SUFFIX;
-    return readdirSync(directory)
-      .flatMap((name) => {
-        if (!name.startsWith(prefix) || !name.endsWith(suffix)) return [];
-        const timestamp = Number(name.slice(prefix.length, -suffix.length));
-        if (!Number.isSafeInteger(timestamp) || timestamp < 0) return [];
-        return [{ path: join(directory, name), timestamp }];
-      })
-      .sort((left, right) => right.timestamp - left.timestamp);
+  /** Replaces a list without running the tree validation (import path). */
+  public replaceTodosSync(sessionID: string, todos: TodoRootItem[]): void {
+    replaceSessionTodos(this.database(), this.resolveKey(sessionID), todos);
   }
 
-  private listSessionFiles(sessionID: string): SessionFile[] {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    const sessionDirs = [
-      this.getTodosDirectory(safeSessionID),
-      this.getSessionDirectory(safeSessionID),
-    ].filter((directory, index, all) => all.indexOf(directory) === index);
-
-    for (const sessionDir of sessionDirs) {
-      try {
-        const files = this.scanTodoFiles(sessionDir, TodoStore.FILE_PREFIX);
-        if (files.length > 0) return files;
-      } catch (error) {
-        if (!TodoStore.isMissingFile(error)) throw error;
-      }
-    }
-
-    // Oldest layout: flat files in the base directory, `todos-<sessionID>-<ts>.json`.
-    try {
-      return this.scanTodoFiles(
-        this.getTodosDirectory(),
-        `${TodoStore.FILE_PREFIX}${safeSessionID}-`,
-      );
-    } catch (error) {
-      if (TodoStore.isMissingFile(error)) return [];
-      throw error;
-    }
-  }
-
-  private readVersionFile(sessionID: string): number | null {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    const paths = [
-      this.getVersionFilePath(safeSessionID),
-      join(this.getSessionDirectory(safeSessionID), "version"),
-    ];
-    for (const path of paths) {
-      try {
-        const version = Number.parseInt(readFileSync(path, "utf8").trim(), 10);
-        if (Number.isSafeInteger(version) && version >= 0) return version;
-      } catch {
-        // try the next candidate
-      }
-    }
-    return null;
-  }
-
-  private static parseTodoFile(raw: string): TodoRootItem[] {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      const list = Array.isArray(parsed)
-        ? parsed
-        : typeof parsed === "object" && parsed !== null && "todos" in parsed
-          ? parsed.todos
-          : undefined;
-      if (!Array.isArray(list)) throw new Error("todo list is missing");
-
-      const result = TodoRootItemSchema.array().safeParse(list);
-      if (!result.success) {
-        throw new Error(result.error.issues.map((i) => i.message).join(", "));
-      }
-      return result.data as TodoRootItem[];
-    } catch (err) {
-      throw new InvalidTodoDataError(
-        `[todo store read failed] invalid todo data: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /** Shared error policy for readTodos / readTodosSync. */
-  private recoverFromReadError(error: unknown): TodoRootItem[] {
-    if (TodoStore.isMissingFile(error)) return [];
-    if (error instanceof InvalidTodoDataError) throw error;
-    throw new Error(
-      `[todo store read failed] unable to read todo storage: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  private async writeTextAtomically(
-    filePath: string,
-    content: string,
-  ): Promise<void> {
-    const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, filePath);
-    } finally {
-      await rm(temporary, { force: true });
-    }
-  }
-
-  private async writeJsonAtomically(
-    filePath: string,
-    data: unknown,
-  ): Promise<void> {
-    await this.writeTextAtomically(
-      filePath,
-      `${JSON.stringify(data, null, 2)}\n`,
-    );
-  }
-
-  private async migrateFlatTodoFiles(
-    sessionRoot: string,
-    todosDir: string,
-  ): Promise<void> {
-    let names: string[];
-    try {
-      names = readdirSync(sessionRoot);
-    } catch (error) {
-      if (TodoStore.isMissingFile(error)) return;
-      throw error;
-    }
-
-    const movable = new Set([
-      "id",
-      "version",
-      "todos.lock",
-      "hint-marker.json",
-    ]);
-    for (const name of names) {
-      const isTodoFile =
-        name.startsWith(TodoStore.FILE_PREFIX) &&
-        name.endsWith(TodoStore.FILE_SUFFIX);
-      if (!isTodoFile && !movable.has(name)) continue;
-
-      const to = join(todosDir, name);
-      if (existsSync(to)) continue;
-      await rename(join(sessionRoot, name), to).catch(() => { });
-    }
+  /**
+   * Drops the cached connection so the next call reopens from scratch.
+   *
+   * Only for tests: the store deliberately caches one connection per process
+   * (opening applies migrations and sets up WAL, which is not free). A test
+   * that points `OPENCODE_TODOS_DIR` at a new directory must reset, otherwise
+   * the previous connection keeps servicing the old, unlinked file.
+   */
+  public resetForTests(): void {
+    this.handle = undefined;
+    this.importedBaseDir = undefined;
+    // The connection itself is cached in `db.ts`, so closing it there is what
+    // actually releases the old file descriptor.
+    resetDatabaseForTests();
   }
 }
 
-// Module-level singletons / functional helpers for backward-compatibility
+// Module-level singleton plus functional helpers for backward compatibility.
+
 const defaultStore = new TodoStore();
 
 export const getTodosDirectory = (sessionID?: string) =>
   defaultStore.getTodosDirectory(sessionID);
+export const getDatabasePath = () => defaultStore.getDatabasePath();
+export const sessionKey = (sessionID: string) => TodoStore.sessionKey(sessionID);
+export const legacySessionKey = (sessionID: string) =>
+  TodoStore.legacyKey(sessionID);
+/** @deprecated Use {@link legacySessionKey}; the hash is no longer the key. */
 export const hashSessionID = (sessionID: string) =>
   TodoStore.hashSessionID(sessionID);
-export const readTodos = (sessionID: string) =>
-  defaultStore.readTodos(sessionID);
+export const readTodos = (sessionID: string) => defaultStore.readTodos(sessionID);
 export const readTodosSync = (sessionID: string) =>
   defaultStore.readTodosSync(sessionID);
 export const writeTodos = (sessionID: string, todos: TodoRootItem[]) =>
@@ -564,3 +426,9 @@ export const readTodoData = (sessionID: string) =>
   defaultStore.readTodoData(sessionID);
 export const getHintMarkerPath = (sessionID: string) =>
   defaultStore.getHintMarkerPath(sessionID);
+export const getRevision = (sessionID: string) =>
+  defaultStore.getRevision(sessionID);
+export const takeHintRevision = (sessionID: string, revision: number) =>
+  defaultStore.takeHintRevision(sessionID, revision);
+export const getDataVersion = () => defaultStore.getDataVersion();
+export const resetTodoStoreForTests = () => defaultStore.resetForTests();

@@ -11,7 +11,8 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "types": [
-      "node"
+      "node",
+      "bun"
     ]
   },
   "include": [

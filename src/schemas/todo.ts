@@ -1,9 +1,16 @@
 import z from "zod";
 import { PrioritySchema, TodoStatusSchema } from "./status";
 
+/** A top-level id only: `1`, `2`, ... — never a dotted subtask id. */
+export const RootIdSchema = z
+  .number()
+  .int()
+  .positive()
+  .describe("Unique task identifier (e.g. 1)");
+
 // Child id format: <root_id>.<n> as a number -> 1.1, 2.3, etc.
 // Only a single decimal digit (1-9) is allowed, see the note below.
-const ChildIdSchema = z
+export const ChildIdSchema = z
   .number()
   .refine((n) => /^[1-9]\d*\.[1-9]$/.test(String(n)), {
     message:
@@ -11,27 +18,34 @@ const ChildIdSchema = z
   })
   .describe("Unique subtask identifier, format <root_id>.<n> (e.g. 1.1)");
 
-// TodoItem Children SCHEMA
-export const TodoChildernItemSchema = z.object({
-  id: ChildIdSchema,
-  content: z.string().describe("Subtask description"),
-  status: TodoStatusSchema,
-  priority: PrioritySchema.optional(),
-  note: z.string().optional(),
-});
+// Root or child id, composed from the two schemas above so the id rules
+// live in exactly one place.
+export const TodoTargetIdSchema = z
+  .union([RootIdSchema, ChildIdSchema])
+  .describe("Root or child todo id, e.g. 1 or 1.1");
 
-export type TodoChildern = z.infer<typeof TodoChildernItemSchema>;
+// TodoItem Children SCHEMA
+export const TodoChildrenItemSchema = z
+  .object({
+    id: ChildIdSchema,
+    content: z.string().describe("Subtask description"),
+    status: TodoStatusSchema,
+    priority: PrioritySchema.optional(),
+    note: z.string().optional(),
+  })
+  .strict();
 
 // TodoItem Root SCHEMA
 export const TodoRootItemSchema = z
   .object({
-    id: z.number().int().positive().describe("Unique task identifier (e.g. 1)"),
+    id: RootIdSchema,
     content: z.string().describe("Main task summary"),
     status: TodoStatusSchema,
     priority: PrioritySchema.optional(),
     note: z.string().optional(),
-    children: z.array(TodoChildernItemSchema).max(9).optional(),
+    children: z.array(TodoChildrenItemSchema).max(9).optional(),
   })
+  .strict()
   .superRefine((root, ctx) => {
     const seen = new Set<number>();
     if (root.children) {
@@ -57,7 +71,6 @@ export const TodoRootItemSchema = z
       });
     }
   });
-export type TodoRootItem = z.infer<typeof TodoRootItemSchema>;
 
 // Display helpers
 export const formatRootId = (id: number) => `${id}.`;
@@ -81,32 +94,78 @@ export const TodoListSchema = z
   })
   .describe("Hierarchical task list");
 
-// TodoHook Write Input
-export const TodoWriteInputSchema = z.object({
-  todos: TodoListSchema,
-});
-export type TodoWriteInput = z.infer<typeof TodoWriteInputSchema>;
-
-export const TodoTargetIdSchema = z
-  .number()
-  .positive()
-  .refine(
-    (id) => Number.isInteger(id) || /^[1-9]\d*\.[1-9]$/.test(String(id)),
-    "ID must be a root number or child number such as 1 or 1.1",
-  );
-
 // TodoHook Tool Schema
-export const TodoReadOperationSchema = z
+//
+// `read` is a discriminated union on `scope`, so an impossible combination
+// cannot be written at all: `target` exists only alongside `scope: "item"`,
+// `"children"` and `"root"`, none of which is valid without one. `.strict()`
+// on every member is what enforces that — without it
+// `{ scope: "all", target: 1 }` would parse and silently ignore `target`.
+//
+// An omitted `scope` defaults to "all", so a bare `{ operation: "read" }` keeps
+// behaving exactly as it did before this option existed. That default has to
+// live on the discriminator itself; a member without `scope` is rejected at
+// construction time.
+const readOperation = z
+  .literal("read")
+  .describe("'read' to inspect current todos.");
+
+export const TodoReadAllSchema = z
   .object({
-    operation: z.literal("read").describe("'read' to inspect current todos."),
+    operation: readOperation,
+    scope: z
+      .literal("all")
+      .default("all")
+      .describe("Default. Return the whole list."),
   })
   .strict();
+
+export const TodoReadItemSchema = z
+  .object({
+    operation: readOperation,
+    scope: z.literal("item").describe("Return only the targeted item."),
+    target: TodoTargetIdSchema.describe(
+      "Root or child todo id, e.g. 1 or 1.1.",
+    ),
+  })
+  .strict();
+
+export const TodoReadChildrenSchema = z
+  .object({
+    operation: readOperation,
+    scope: z
+      .literal("children")
+      .describe(
+        "Return one root and its subtasks. The root is included as context.",
+      ),
+    target: ChildIdSchema.describe(
+      "A subtask id such as 1.1; its root is resolved from the id.",
+    ),
+  })
+  .strict();
+
+export const TodoReadRootSchema = z
+  .object({
+    operation: readOperation,
+    scope: z
+      .literal("root")
+      .describe("Return exactly one root together with all of its subtasks."),
+    target: RootIdSchema.describe("Root todo id, e.g. 1."),
+  })
+  .strict();
+
+export const TodoReadOperationSchema = z.discriminatedUnion("scope", [
+  TodoReadAllSchema,
+  TodoReadItemSchema,
+  TodoReadChildrenSchema,
+  TodoReadRootSchema,
+]);
 
 export const TodoWriteOperationSchema = z
   .object({
     operation: z
       .literal("write")
-      .describe("'write' to initialize an empty list."),
+      .describe("'write' to replace the whole list. Pass [] to clear it."),
     todos: TodoListSchema.describe(
       "Required for 'write'. Pass [] to clear the list.",
     ),
@@ -116,23 +175,36 @@ export const TodoWriteOperationSchema = z
 export const TodoUpdateOperationSchema = z
   .object({
     operation: z.literal("update").describe("'update' one root or child todo."),
-    id: TodoTargetIdSchema.describe("Root or child todo ID, e.g. 1 or 1.1"),
+    id: TodoTargetIdSchema,
     status: TodoStatusSchema.describe("New status for the target todo."),
     content: z.string().optional(),
     priority: PrioritySchema.nullable().optional(),
     note: z.string().nullable().optional(),
   })
   .strict();
-export type TodoUpdateInput = z.infer<typeof TodoUpdateOperationSchema>;
 
 export const TodoInputToolSchema = z.discriminatedUnion("operation", [
   TodoReadOperationSchema,
   TodoWriteOperationSchema,
   TodoUpdateOperationSchema,
 ]);
-export type TodoInputTool = z.infer<typeof TodoInputToolSchema>;
 
 export const TodoOutputToolSchema = z.object({
-  todos: z.array(TodoRootItemSchema),
+  todos: TodoListSchema,
 });
+
+// Types
+export type TodoChildren = z.infer<typeof TodoChildrenItemSchema>;
+export type TodoRootItem = z.infer<typeof TodoRootItemSchema>;
+
+export type TodoReadAllInput = z.infer<typeof TodoReadAllSchema>;
+export type TodoReadItemInput = z.infer<typeof TodoReadItemSchema>;
+export type TodoReadChildrenInput = z.infer<typeof TodoReadChildrenSchema>;
+export type TodoReadRootInput = z.infer<typeof TodoReadRootSchema>;
+export type TodoReadInput = z.infer<typeof TodoReadOperationSchema>;
+export type TodoReadScope = TodoReadInput["scope"];
+
+export type TodoWriteOperationInput = z.infer<typeof TodoWriteOperationSchema>;
+export type TodoUpdateInput = z.infer<typeof TodoUpdateOperationSchema>;
+export type TodoInputTool = z.infer<typeof TodoInputToolSchema>;
 export type TodoOutputTool = z.infer<typeof TodoOutputToolSchema>;

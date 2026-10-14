@@ -1,5 +1,5 @@
 import { OPEN_STATUSES, type TodoStatus } from "../schemas/status.js";
-import type { TodoChildern, TodoRootItem } from "../schemas/todo";
+import type { TodoChildren, TodoRootItem } from "../schemas/todo";
 
 export interface TodoProgress {
   completed: number;
@@ -55,7 +55,7 @@ export class TodoTree {
   }
 
   static calculateProgress(
-    children?: readonly TodoChildern[],
+    children?: readonly TodoChildren[],
   ): TodoProgress | null {
     if (!children || children.length === 0) return null;
     const nonCancelled = TodoTree.nonCancelled(children);
@@ -229,18 +229,36 @@ export class TodoTree {
 
   // Rendering
 
-  public render(): string {
+  /**
+   * Renders the tree.
+   *
+   * `options.visibleIds` narrows which rows are *printed* without touching the
+   * data, so a root keeps its real `(completed/total)` label even when only one
+   * subtask is listed. A scoped read needs exactly that: the root line shows
+   * `(2/2)` while a single subtask row is displayed.
+   *
+   * A root line is printed only when its own id is visible; a child line only
+   * when the child's id is visible. Omitting `visibleIds` prints everything.
+   */
+  public render(options?: { visibleIds?: readonly number[] }): string {
     const lines: string[] = [];
+    const visible =
+      options?.visibleIds === undefined
+        ? undefined
+        : new Set(options.visibleIds);
 
     for (const parent of this.todos) {
       const progress = TodoTree.calculateProgress(parent.children);
       const progressText = progress ? ` (${progress.label})` : "";
-      lines.push(
-        `${TodoTree.icon(parent.status)} ${TodoTree.renderLabel(parent, 0)}${progressText}`,
-      );
-      if (parent.note) lines.push(`    ↳ note: ${parent.note}`);
+      if (!visible || visible.has(parent.id)) {
+        lines.push(
+          `${TodoTree.icon(parent.status)} ${TodoTree.renderLabel(parent, 0)}${progressText}`,
+        );
+        if (parent.note) lines.push(`    ↳ note: ${parent.note}`);
+      }
 
       for (const child of parent.children ?? []) {
+        if (visible && !visible.has(child.id)) continue;
         lines.push(
           `    ${TodoTree.icon(child.status)} ${TodoTree.renderLabel(child, 1)}`,
         );

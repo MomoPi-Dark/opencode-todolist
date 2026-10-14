@@ -2,125 +2,243 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const { supportsImageRendering } = await import(
-    "../src/icons/image-capabilities.ts"
-);
+const {
+    ALL_GLYPHS,
+    ARROW_DOWN,
+    ARROW_RIGHT,
+    CLEAR,
+    CONTINUE,
+    GLYPH_CODEPOINTS,
+    REJECTED_GLYPHS,
+} = await import("../src/icons/glyphs.ts");
+
+const { ResolveGlyphBox } = await import("../src/icons/glyph.tsx");
 
 // ---------------------------------------------------------------------------
-// supportsImageRendering — decides whether the SVG or the text branch renders
-// ---------------------------------------------------------------------------
-
-assert.equal(
-    supportsImageRendering(undefined),
-    false,
-    "unknown capabilities must fall back to text",
-);
-assert.equal(
-    supportsImageRendering(null),
-    false,
-    "null capabilities must fall back to text",
-);
-assert.equal(
-    supportsImageRendering({
-        kitty_graphics: false,
-        sixel: false,
-    } as never),
-    false,
-    "a terminal without kitty/sixel must fall back to text",
-);
-assert.equal(
-    supportsImageRendering({
-        kitty_graphics: true,
-        sixel: false,
-    } as never),
-    true,
-    "kitty graphics terminals render SVG icons",
-);
-assert.equal(
-    supportsImageRendering({
-        kitty_graphics: false,
-        sixel: true,
-    } as never),
-    true,
-    "sixel terminals render SVG icons",
-);
-// Windows Terminal reports neither protocol, so it takes the text branch —
-// which is exactly the branch whose glyph failed to update.
-assert.equal(
-    supportsImageRendering({
-        kitty_graphics: false,
-        sixel: false,
-        image_protocol: "blocks",
-    } as never),
-    false,
-    "block-protocol image terminals must not attempt SVG rendering",
-);
-
-console.log("✔ supportsImageRendering: text fallback for Windows/plain terminals");
-
-// ---------------------------------------------------------------------------
-// Regression: Solid props must never be destructured
+// Glyph sizing rules
 // ---------------------------------------------------------------------------
 //
-// The collapsed `▶` / expanded `▼` glyph froze because SvgIcon did
-// `const { fallback } = props`. Solid passes props as getters, so a
-// destructuring assignment reads each getter once at creation time and the
-// value never updates. The same pattern also froze `source`, `width`, and
-// `height`. splitProps (or reading `props.x` inline) keeps them live.
+// Precedence: explicit width/height > size shorthand > "auto". Keeping the
+// default at "auto" means callers get a correctly sized node for free, and the
+// pure helper lets this be verified without a live renderer.
+
+assert.deepEqual(
+    ResolveGlyphBox({}),
+    { width: "auto", height: "auto" },
+    "no sizing props must default to auto on both axes",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ size: 2 }),
+    { width: 2, height: 2 },
+    "size must set both axes",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ size: 2, width: 3 }),
+    { width: 3, height: 2 },
+    "explicit width must override size, leaving height from size",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ size: 2, height: 4 }),
+    { width: 2, height: 4 },
+    "explicit height must override size, leaving width from size",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ width: 1, height: 1 }),
+    { width: 1, height: 1 },
+    "explicit width and height must both apply",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ size: "auto", width: "50%" }),
+    { width: "50%", height: "auto" },
+    "percentage and auto values must pass through unchanged",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ fill: true }),
+    { width: "100%", height: "100%" },
+    "fill must stretch both axes to 100%",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ fill: true, width: 3 }),
+    { width: 3, height: "100%" },
+    "explicit width must override fill on that axis only",
+);
+
+assert.deepEqual(
+    ResolveGlyphBox({ fill: true, size: 2 }),
+    { width: "100%", height: "100%" },
+    "fill must take precedence over size",
+);
+
+console.log("✔ glyph box: width/height > fill > size > auto");
+
+// ---------------------------------------------------------------------------
+// Shipped glyphs
+// ---------------------------------------------------------------------------
+//
+// The indicators follow OpenCode's own MCP sidebar, which renders
+// `<text fg={...}>{open ? "▼" : "▶"}</text>`
+// (packages/tui/src/feature-plugins/sidebar/mcp.tsx). Those exact codepoints
+// are pinned so a visually similar but poorly supported look-alike cannot be
+// substituted unnoticed.
+//
+// Note for future edits: a bare `fg` attribute on `<text>` IS reactive —
+// TextBufferRenderable's fg setter calls requestRender(). Do not "fix" hover by
+// moving colours into a nested <span>.
+
+assert.deepEqual(
+    {
+        ARROW_RIGHT: ARROW_RIGHT.codePointAt(0),
+        ARROW_DOWN: ARROW_DOWN.codePointAt(0),
+        CONTINUE: CONTINUE.codePointAt(0),
+        CLEAR: CLEAR.codePointAt(0),
+    },
+    GLYPH_CODEPOINTS,
+    "glyph codepoints must match the pinned set",
+);
+
+for (const [name, glyph] of Object.entries(ALL_GLYPHS)) {
+    assert.equal(
+        [...glyph].length,
+        1,
+        `${name} must be a single code point, got ${JSON.stringify(glyph)}`,
+    );
+    assert.ok(glyph.trim().length > 0, `${name} must not be blank`);
+}
+
+// Collapsed and expanded must differ, or the panel cannot show its state.
+assert.notEqual(
+    ARROW_RIGHT,
+    ARROW_DOWN,
+    "collapsed and expanded indicators must differ",
+);
+
+// The shrunk look-alikes must not come back: the indicator has to read at full
+// size in a 2-cell box.
+for (const rejected of REJECTED_GLYPHS) {
+    assert.ok(
+        !Object.values(ALL_GLYPHS).includes(rejected as never),
+        `${JSON.stringify(rejected)} is too small for the indicator slot`,
+    );
+}
+
+console.log("✔ glyphs: pinned codepoints, shrunk look-alikes rejected");
+
+// ---------------------------------------------------------------------------
+// Regression: prop reactivity must survive the code as written
+// ---------------------------------------------------------------------------
+//
+// Solid passes props as getters. `const { x } = props` reads once and freezes,
+// which is what made the collapsed/expanded arrow stick. Every glyph prop is
+// therefore an accessor that is CALLED inside the JSX.
 
 const srcDir = new URL("../src", import.meta.url).pathname;
 
-function collectTsx(dir: string): string[] {
+function collectFiles(dir: string, extensions: string[]): string[] {
     return readdirSync(dir, { withFileTypes: true, recursive: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".tsx"))
+        .filter(
+            (entry) =>
+                entry.isFile() &&
+                extensions.some((ext) => entry.name.endsWith(ext)),
+        )
         .map((entry) => join(entry.parentPath ?? dir, entry.name));
 }
 
 // Matches `const { ... } = props` and `const { ... } = someProps`.
 const DESTRUCTURED_PROPS = /\bconst\s*\{[^}]*\}\s*=\s*\w*[Pp]rops\b/;
 
-const offenders: string[] = [];
-for (const file of collectTsx(srcDir)) {
+const destructured: string[] = [];
+for (const file of collectFiles(srcDir, [".tsx"])) {
     const source = readFileSync(file, "utf8");
     for (const [index, line] of source.split("\n").entries()) {
-        // Allow an explicitly commented rationale line to mention the pattern.
         if (/^\s*\/\//.test(line)) continue;
         if (DESTRUCTURED_PROPS.test(line)) {
-            offenders.push(`${file.replace(srcDir, "src")}:${index + 1} ${line.trim()}`);
+            destructured.push(
+                `${file.replace(srcDir, "src")}:${index + 1} ${line.trim()}`,
+            );
         }
     }
 }
 
 assert.deepEqual(
-    offenders,
+    destructured,
     [],
-    `Solid props must not be destructured (reactivity is lost). Use splitProps instead:\n${offenders.join("\n")}`,
+    `Solid props must not be destructured (reactivity is lost). Use splitProps instead:\n${destructured.join("\n")}`,
 );
 
 console.log("✔ no Solid component destructures its props");
 
 // ---------------------------------------------------------------------------
-// Regression: the built icon must insert a live accessor, not a static value
+// The built output must keep both reactivity paths
 // ---------------------------------------------------------------------------
+//
+// Checked against dist/ because that is the code OpenCode loads. A `.tsx` file
+// run directly is compiled by Bun's own JSX transform, not Solid's, so testing
+// source JSX would prove nothing about reactivity.
 
-const built = readFileSync(
-    new URL("../dist/icons/svg-icon.js", import.meta.url),
+const builtGlyph = readFileSync(
+    new URL("../dist/icons/glyph.js", import.meta.url),
+    "utf8",
+);
+const builtPanel = readFileSync(
+    new URL("../dist/tui/todo-panel.js", import.meta.url),
     "utf8",
 );
 
+// The compiled text node is inserted through the local `text` accessor, so the
+// glyph stays live. Passing a computed string here would freeze it.
 assert.ok(
-    /splitProps\(props/.test(built),
-    "the built SvgIcon must use splitProps to preserve prop reactivity",
+    /_\$insert\(_el\$, text\)/.test(builtGlyph),
+    "built Glyph must insert the glyph through an accessor, not a frozen value",
 );
 assert.ok(
-    !/_\$insert\([^,]+,\s*fallback\s*\)/.test(built),
-    "the built fallback must not be inserted as a frozen value",
+    /const text = \(\) =>/.test(builtGlyph),
+    "built Glyph must define the glyph as an accessor",
+);
+// Colour and both box axes are applied in one reactive effect, so hover colour
+// and size changes repaint. TextBufferRenderable's fg setter calls
+// requestRender(), matching OpenCode's own mcp.tsx sidebar pattern.
+assert.ok(
+    /_\$setProp\([^,]+,\s*"fg",\s*_v\$[,)]/.test(builtGlyph),
+    "built Glyph must apply colour reactively via the text node fg prop",
 );
 assert.ok(
-    /_\$insert\([^,]+,\s*\(\)\s*=>\s*local\.fallback\s*\)/.test(built),
-    "the built fallback must be inserted as a function accessor",
+    /_\$setProp\([^,]+,\s*"width",\s*_v\$2[,)]/.test(builtGlyph),
+    "built Glyph must apply width reactively",
+);
+assert.ok(
+    /_\$setProp\([^,]+,\s*"height",\s*_v\$3[,)]/.test(builtGlyph),
+    "built Glyph must apply height reactively",
+);
+assert.ok(
+    !/_createElement\("span"\)/.test(builtGlyph),
+    "built Glyph must not wrap the glyph in a span",
+);
+assert.ok(
+    /glyph:\s*\(\)\s*=>\s*isCollapsed\(\)\s*\?\s*ARROW_RIGHT\s*:\s*ARROW_DOWN/.test(
+        builtPanel,
+    ),
+    "built panel must derive the arrow glyph from isCollapsed()",
+);
+assert.ok(
+    builtPanel.includes("ARROW_RIGHT") && builtPanel.includes("ARROW_DOWN"),
+    "built panel must reference both arrow glyphs",
 );
 
-console.log("✔ built SvgIcon inserts the fallback through a live accessor");
+// The arrow sits in a fixed 2-cell box (glyph cell + blank). A wider glyph
+// would push the label, so keep the box in sync with the pinned codepoints.
+assert.ok(
+    /_\$setProp\([^,]+,\s*"width",\s*2\)/.test(builtPanel) ||
+        builtPanel.includes("width: 2"),
+    "arrow container must stay a fixed 2-cell box",
+);
 
-console.log("\n✔ Icon reactivity suite passed");
+console.log("✔ built output keeps glyph and color reactivity");
+
+console.log("\n✔ Glyph suite passed");

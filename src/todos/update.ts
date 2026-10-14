@@ -1,8 +1,7 @@
 import type { Priority, TodoStatus } from "../schemas/status";
 import type {
-  TodoChildern,
   TodoRootItem,
-  TodoUpdateInput,
+  TodoUpdateInput
 } from "../schemas/todo";
 
 type UpdateFields = Omit<TodoUpdateInput, "id">;
@@ -120,7 +119,7 @@ export function assertSequentialScope(
   if (targetRootIndex !== firstOpen && !hasError(targetRoot)) {
     const blocking = todos[firstOpen]!;
     throw new Error(
-      `[manage_todo_list] root ${targetRoot.id} is out of order: finish root ${blocking.id} "${blocking.content}" first (or cancel it). Only a root in 'error' may be fixed early.`,
+      `root ${targetRoot.id} is out of order: finish root ${blocking.id} "${blocking.content}" first (or cancel it). Only a root in 'error' may be fixed early.`,
     );
   }
 
@@ -144,7 +143,7 @@ export function assertSequentialScope(
     const running = activeRoot(todos);
     if (running && running.id !== targetRoot.id) {
       throw new Error(
-        `[manage_todo_list] root ${running.id} is still in_progress. Finish it (or cancel it) before starting ${targetRoot.id}; an error root may be fixed early only when nothing else is running.`,
+        `root ${running.id} is still in_progress. Finish it (or cancel it) before starting ${targetRoot.id}; an error root may be fixed early only when nothing else is running.`,
       );
     }
 
@@ -184,7 +183,7 @@ export function updateTodoById(
 
     const children = (root.children ?? []).map((child) => {
       if (child.id !== input.id) return child;
-      const item = applyUpdate(child as TodoChildern, input);
+      const item = applyUpdate(child, input);
       updated = {
         id: item.id,
         scope: "child",

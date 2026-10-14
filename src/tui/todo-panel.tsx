@@ -9,18 +9,12 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { supportsImageRendering } from "../icons/image-capabilities";
-import { SvgIcon } from "../icons/svg-icon";
-import {
-  arrowDownSvgIcon,
-  arrowRightSvgIcon,
-  continuePromptSvgIcon,
-  removeSvgIcon,
-} from "../icons/svg-icons";
+import { Glyph } from "../icons/glyph";
+import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/glyphs";
 import { StatusLabel, type TodoStatus } from "../schemas/status";
 import {
+  getDataVersion,
   getTodosDirectory,
-  hashSessionID,
   readTodosSync,
   writeTodos,
 } from "../storage/todo-store";
@@ -43,6 +37,15 @@ export const CONTINUE_PROMPT_MAX_NOTE = 60;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 100;
 const WATCH_DEBOUNCE_MS = 50;
+
+/**
+ * Safety-net interval for cross-process change detection.
+ *
+ * `fs.watch` on the database usually fires first; this poll only exists for
+ * the cases where the filesystem event is missed or arrives late. One PRAGMA
+ * per second is negligible next to rendering the panel.
+ */
+const DATA_VERSION_POLL_MS = 1000;
 
 /**
  * Maximum number of todo rows the panel shows before it starts scrolling.
@@ -346,55 +349,72 @@ function createHover() {
 }
 
 /**
- * Watches the todos directory and calls `onChange` (debounced) when a file
- * belonging to the current session changes. Cleans up with the owner scope.
+ * Notifies when the todo data changes, from either process.
+ *
+ * All sessions now live in one SQLite file, so there is no longer a per-session
+ * folder to watch. Two complementary signals are used:
+ *
+ * 1. `fs.watch` on the database file, debounced. Low latency, but SQLite writes
+ *    to the WAL first, so the event can arrive before the reader sees the new
+ *    rows, and some platforms are inconsistent about reporting it at all.
+ * 2. A poll of `PRAGMA data_version`, which changes exactly when *another*
+ *    connection commits. This is the safety net: if the filesystem event is
+ *    missed, the poll still notices within one interval.
+ *
+ * The poll is skipped entirely while the document is idle and nothing moved, so
+ * the steady-state cost is one cheap PRAGMA per interval.
  */
-function watchSessionTodos(sessionID: () => string, onChange: () => void) {
+function watchSessionTodos(
+  onChange: () => void,
+  readDataVersion: () => number,
+) {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
   let watcher: ReturnType<typeof watch> | undefined;
-
-  const hashed = createMemo(() => {
-    const sid = sessionID();
-    if (!sid) return "";
-    try {
-      return hashSessionID(sid);
-    } catch {
-      return "";
-    }
-  });
 
   const notify = () => {
     clearTimeout(timer);
     timer = setTimeout(onChange, WATCH_DEBOUNCE_MS);
   };
 
-  const belongsToSession = (name: string) => {
-    const sid = sessionID();
-    if (!sid) return true;
-    const hash = hashed();
-    return (
-      (hash !== "" && name.startsWith(hash)) ||
-      name.startsWith(sid) ||
-      name.startsWith(`todos-${sid}-`)
-    );
+  // Seed with the current value so the first poll compares against reality
+  // instead of firing a spurious refresh.
+  let lastVersion = Number.NaN;
+  const poll = () => {
+    try {
+      const version = readDataVersion();
+      if (Number.isNaN(lastVersion)) {
+        lastVersion = version;
+        return;
+      }
+      if (version !== lastVersion) {
+        lastVersion = version;
+        notify();
+      }
+    } catch {
+      // The database may be mid-migration; the next tick retries.
+    }
   };
 
   try {
     const baseDir = getTodosDirectory();
     mkdirSync(baseDir, { recursive: true });
-    watcher = watch(
-      baseDir,
-      { recursive: true, persistent: false },
-      (_, filename) => {
-        if (!filename || belongsToSession(String(filename))) notify();
-      },
-    );
+    // Watching the directory rather than the file itself: SQLite may replace
+    // the file on checkpoint, which would detach a file-level watcher.
+    watcher = watch(baseDir, { persistent: false }, (_, filename) => {
+      const name = filename ? String(filename) : "";
+      if (!name || name.startsWith("todos.db")) notify();
+    });
   } catch (err) {
     console.error("[todos] watcher initialization failed:", err);
   }
 
+  interval = setInterval(poll, DATA_VERSION_POLL_MS);
+  poll();
+
   onCleanup(() => {
     clearTimeout(timer);
+    if (interval) clearInterval(interval);
     watcher?.close();
   });
 }
@@ -417,15 +437,6 @@ export function TodoProgress(props: {
 
   const clearHover = createHover();
   const continueHover = createHover();
-
-  // Image capability
-  const [imageSupported, setImageSupported] = createSignal(
-    supportsImageRendering(context.renderer?.capabilities),
-  );
-  const onCapabilities = (caps: any) =>
-    setImageSupported(supportsImageRendering(caps));
-  context.renderer.on("capabilities", onCapabilities);
-  onCleanup(() => context.renderer.off("capabilities", onCapabilities));
 
   // Running state
   const readRunning = () => {
@@ -469,7 +480,7 @@ export function TodoProgress(props: {
   });
 
   // Todo data
-  watchSessionTodos(sessionID, () => setRefresh((v) => v + 1));
+  watchSessionTodos(() => setRefresh((v) => v + 1), getDataVersion);
 
   const summary = createMemo<TodoDisplaySummary | null>(() => {
     refresh();
@@ -613,19 +624,20 @@ export function TodoProgress(props: {
                 }
               }}
             >
+              {/* Fixed 2-cell target: one glyph cell plus one blank. Every
+                  glyph in `glyphs.ts` is pinned to a single-cell codepoint so
+                  layout width, painted width, and the hover hit region agree. */}
               <box
                 flexDirection="row"
                 width={2}
                 height={1}
                 marginRight={1}
-                marginLeft={imageSupported() ? 0 : 1}
+                marginLeft={1}
                 alignItems="flex-start"
               >
-                <SvgIcon
-                  source={isCollapsed() ? arrowRightSvgIcon : arrowDownSvgIcon}
+                <Glyph
+                  glyph={() => (isCollapsed() ? ARROW_RIGHT : ARROW_DOWN)}
                   color={theme().text.muted}
-                  fallback={isCollapsed() ? "▶" : "▼"}
-                  width={2}
                   height={1}
                 />
               </box>
@@ -680,15 +692,12 @@ export function TodoProgress(props: {
                   }
                 }}
               >
-                <SvgIcon
-                  source={continuePromptSvgIcon}
+                <Glyph
+                  glyph={() => CONTINUE}
                   color={hoverColor(
                     continueHover.hovered(),
                     theme().text.action.primary.base,
                   )}
-                  fallback="↻"
-                  width={2}
-                  height={1}
                 />
                 <text
                   wrapMode="none"
@@ -702,8 +711,10 @@ export function TodoProgress(props: {
               </box>
             </Show>
 
+            {/* Fixed trailing margin: the clear glyph is pinned to a single
+                cell, so the hover target and the painted glyph stay aligned. */}
             <box
-              marginRight={!imageSupported() ? 1.5 : 0}
+              marginRight={1.5}
               flexDirection="row"
               onMouseOver={clearHover.onMouseOver}
               onMouseOut={clearHover.onMouseOut}
@@ -714,15 +725,12 @@ export function TodoProgress(props: {
                 }
               }}
             >
-              <SvgIcon
+              <Glyph
+                glyph={() => CLEAR}
                 color={hoverColor(
                   clearHover.hovered(),
                   theme().text.feedback.error.base,
                 )}
-                source={removeSvgIcon}
-                fallback="✖"
-                height={1}
-                width={2}
               />
             </box>
           </box>

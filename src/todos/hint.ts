@@ -1,6 +1,5 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { getHintMarkerPath, readTodoData, TodoStore } from "../storage/todo-store";
-import type { TodoChildern, TodoRootItem } from "../schemas/todo";
+import { readTodoData, takeHintRevision, TodoStore } from "../storage/todo-store";
+import type { TodoChildren, TodoRootItem } from "../schemas/todo";
 import type { TodoStatus } from "../schemas/status";
 import { TodoTree } from "./todo-tree";
 
@@ -28,17 +27,22 @@ export function isAnyTodoActive(todos: readonly TodoRootItem[]): boolean {
   return todos.some(isTaskActive);
 }
 
-function atomicWrite(file: string, data: string): void {
-  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  writeFileSync(tmp, data, "utf8");
-  renameSync(tmp, file);
-}
-
 export interface ConsumeTodoHintOptions {
   staleMs?: number;
   now?: number;
 }
 
+/**
+ * Returns the resume hint at most once per stored revision.
+ *
+ * The "already hinted" marker used to be a `hint-marker.json` file next to the
+ * todo payload. It now lives in `todo_session.hint_revision`, so the decision is
+ * a single row and cannot drift from the data it describes.
+ *
+ * The hint is suppressed when the list has no open item, or when the stored
+ * write is older than `staleMs` — a resumed session should not be told about
+ * work the user abandoned long ago.
+ */
 export function consumeTodoHint(
   sessionID: string,
   options?: ConsumeTodoHintOptions,
@@ -60,25 +64,18 @@ export function consumeTodoHint(
       return undefined;
     }
 
-    const markerFile = getHintMarkerPath(safeSessionID);
-    let hintedVersion = -1;
-    try {
-      const marker = JSON.parse(readFileSync(markerFile, "utf8"));
-      if (typeof marker?.version === "number") hintedVersion = marker.version;
-    } catch {
-      // Marker missing or corrupt
-    }
+    // Atomic: reads the previous marker and records this revision in one step,
+    // so two rapid calls cannot both emit the hint.
+    const previous = takeHintRevision(safeSessionID, state.version);
+    if (previous === state.version) return undefined;
 
-    if (hintedVersion === state.version) return undefined;
-
-    atomicWrite(markerFile, JSON.stringify({ version: state.version }));
     return TODO_HINT;
   } catch {
     return undefined;
   }
 }
 
-type Leaf = TodoRootItem | TodoChildern;
+type Leaf = TodoRootItem | TodoChildren;
 
 export function flattenLeaves(todos: readonly TodoRootItem[]): Leaf[] {
   return todos.flatMap((t) => (t.children?.length ? t.children : [t]));

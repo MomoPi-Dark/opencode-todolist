@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin";
 import {
   TodoInputToolSchema,
   TodoOutputToolSchema,
+  type TodoReadInput,
   type TodoRootItem,
 } from "./schemas/todo";
 import { registerTodoSkills } from "./skills/loader";
@@ -17,10 +18,13 @@ import {
 import { TodoTree } from "./todos/todo-tree";
 import { updateTodoById } from "./todos/update";
 
-export function formatReadOutput(todos: readonly TodoRootItem[]): string {
+export function formatReadOutput(
+  todos: readonly TodoRootItem[],
+  options?: { visibleIds?: readonly number[] },
+): string {
   if (todos.length === 0) return "No todos recorded.";
 
-  const tree = new TodoTree(todos).render();
+  const tree = new TodoTree(todos).render(options);
   const check = new TodoTree(todos).validateAndNormalize();
   if (check.valid) return tree;
 
@@ -116,6 +120,47 @@ export function formatUpdateOutput(
   );
 }
 
+/**
+ * Narrows a list for a scoped read.
+ *
+ * - `scope: "root"` returns one root with every subtask, so the whole branch is
+ *   visible.
+ * - `scope: "children"` prints the root line as context plus the targeted
+ *   subtask line, matching a "show me this subtask within its root" read.
+ * - `scope: "item"` prints only the targeted row.
+ *
+ * Either way the root keeps every subtask in the *data*, because the root's
+ * `(completed/total)` label is computed from them — dropping them would
+ * silently turn `(2/2)` into `(1/1)`.
+ */
+export function selectReadScope(
+  todos: readonly TodoRootItem[],
+  input: TodoReadInput,
+): { todos: TodoRootItem[]; visibleIds?: readonly number[] } {
+  if (input.scope !== "item" && input.scope !== "children" && input.scope !== "root") {
+    return { todos: [...todos] };
+  }
+
+  const target = input.target;
+  const rootId = Number.isInteger(target) ? target : Math.floor(target);
+  const root = todos.find((item) => item.id === rootId);
+  const child = Number.isInteger(target)
+    ? undefined
+    : root?.children?.find((item) => item.id === target);
+
+  if (!root || (!Number.isInteger(target) && !child)) {
+    throw new Error(`[manage_todo_list] todo id ${target} was not found`);
+  }
+
+  // `root` shows the branch as-is; it needs no row filter at all.
+  if (input.scope === "root") return { todos: [root] };
+
+  const visibleIds =
+    input.scope === "children" ? [rootId, target] : [target];
+
+  return { todos: [root], visibleIds };
+}
+
 export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
   await ctx.tool.transform((tools) => {
     tools.add({
@@ -142,7 +187,13 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
 
         if (parsed.data.operation === "read") {
           const todos = await readTodos(toolContext.sessionID);
-          return { output: { todos }, content: formatReadOutput(todos) };
+          const scoped = selectReadScope(todos, parsed.data);
+          return {
+            output: { todos: scoped.todos },
+            content: formatReadOutput(scoped.todos, {
+              visibleIds: scoped.visibleIds,
+            }),
+          };
         }
 
         if (parsed.data.operation === "update") {
