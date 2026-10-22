@@ -65,9 +65,7 @@ function assertForwardTransition(
 ): void {
   if (from === to) return;
   if (!(FORWARD_TRANSITIONS[from] ?? []).includes(to)) {
-    throw new Error(
-      `todo ${id} cannot move from '${from}' to '${to}'. Progress only moves forward; use 'error' to report a failure and fix it from there.`,
-    );
+    throw new Error(`${id} is ${from}. Forward-only.`);
   }
 }
 
@@ -105,13 +103,13 @@ export function assertSequentialScope(
       root.children?.some((child) => child.id === input.id),
   );
   if (!targetRoot) {
-    throw new Error(`todo id ${input.id} was not found`);
+    throw new Error(`No todo ${input.id}.`);
   }
 
   const firstOpen = todos.findIndex((root) => !isFinal(root.status));
   if (firstOpen === -1) {
     throw new Error(
-      "every todo is already finished; nothing can be updated.",
+      "All todos are final.",
     );
   }
 
@@ -119,7 +117,7 @@ export function assertSequentialScope(
   if (targetRootIndex !== firstOpen && !hasError(targetRoot)) {
     const blocking = todos[firstOpen]!;
     throw new Error(
-      `root ${targetRoot.id} is out of order: finish root ${blocking.id} "${blocking.content}" first (or cancel it). Only a root in 'error' may be fixed early.`,
+      `Root ${blocking.id} open. Finish or cancel it first.`,
     );
   }
 
@@ -128,11 +126,11 @@ export function assertSequentialScope(
       ? targetRoot
       : targetRoot.children?.find((child) => child.id === input.id);
   if (!target) {
-    throw new Error(`todo id ${input.id} was not found`);
+    throw new Error(`No todo ${input.id}.`);
   }
 
   if (isFinal(target.status)) {
-    throw new Error(`todo ${input.id} is '${target.status}' and final; it cannot be changed.`);
+    throw new Error(`${input.id} is ${target.status}.`);
   }
 
   assertForwardTransition(target.status, input.status, input.id);
@@ -141,7 +139,7 @@ export function assertSequentialScope(
     const running = activeRoot(todos);
     if (running && running.id !== targetRoot.id) {
       throw new Error(
-        `root ${running.id} is still in_progress. Finish it (or cancel it) before starting ${targetRoot.id}; an error root may be fixed early only when nothing else is running.`,
+        `${running.id} is running. Finish it first.`,
       );
     }
 
@@ -150,7 +148,7 @@ export function assertSequentialScope(
     );
     if (busyChild) {
       throw new Error(
-        `subtask ${busyChild.id} is still in_progress. Finish it (or cancel it) before starting ${input.id}.`,
+        `${busyChild.id} is running. Finish it first.`,
       );
     }
   }
@@ -202,7 +200,7 @@ export function updateTodoById(
   });
 
   if (!updated) {
-    throw new Error(`todo id ${input.id} was not found`);
+    throw new Error(`No todo ${input.id}.`);
   }
 
   return { todos: nextTodos, updated };

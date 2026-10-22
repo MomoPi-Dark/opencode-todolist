@@ -18,42 +18,58 @@ import { runReadOperation } from "./todos/read";
 import { TodoTree } from "./todos/todo-tree";
 import { updateTodoById } from "./todos/update";
 
-export function formatTransitionLines(
+const STATUS_MARK = {
+  completed: "✓\uFE0E",
+  in_progress: "▶\uFE0E",
+  error: "✗\uFE0E",
+} as const;
+
+/**
+ * Status changes produced by one call.
+ *
+ * `changedIds` is returned alongside the rendered lines so the caller can avoid
+ * naming the same item twice: `Next:` is only worth printing when it points
+ * somewhere other than the row that just moved.
+ */
+export interface TransitionSummary {
+  readonly lines: string[];
+  readonly changedIds: ReadonlySet<number>;
+}
+
+export function summarizeTransitions(
   before: readonly TodoRootItem[],
   after: readonly TodoRootItem[],
-): string[] {
+): TransitionSummary {
   const previous = new Map(
     flattenLeaves(before).map((leaf) => [leaf.id, leaf.status] as const),
   );
   const leaves = flattenLeaves(after);
   const total = leaves.length;
-  const completed: string[] = [];
-  const started: string[] = [];
-  const failed: string[] = [];
+  const lines: string[] = [];
+  const changedIds = new Set<number>();
 
   leaves.forEach((leaf, index) => {
     const was = previous.get(leaf.id);
-    const label = `(${index + 1}/${total}): ${leaf.content}`;
-    if (
-      leaf.status === "completed" &&
-      was !== undefined &&
-      was !== "completed"
-    ) {
-      completed.push(`✓\uFE0E  Completed ${label}`);
-    } else if (leaf.status === "in_progress" && was !== "in_progress") {
-      started.push(`▶\uFE0E  Starting ${label}`);
-    } else if (
-      leaf.status === "error" &&
-      was !== undefined &&
-      was !== "error"
-    ) {
-      failed.push(
-        `✗\uFE0E  Error ${label}${leaf.note ? ` — ${leaf.note}` : ""}`,
+    if (was === leaf.status) return;
+    // A leaf already present at its starting status is not a transition.
+    if (was === undefined && leaf.status !== "in_progress") return;
+
+    const label = `${index + 1}/${total}: ${leaf.content}`;
+    if (leaf.status === "completed") {
+      changedIds.add(leaf.id);
+      lines.push(`${STATUS_MARK.completed} ${label}`);
+    } else if (leaf.status === "in_progress") {
+      changedIds.add(leaf.id);
+      lines.push(`${STATUS_MARK.in_progress} ${label}`);
+    } else if (leaf.status === "error") {
+      changedIds.add(leaf.id);
+      lines.push(
+        `${STATUS_MARK.error} ${label}${leaf.note ? ` — ${leaf.note}` : ""}`,
       );
     }
   });
 
-  return [...completed, ...started, ...failed];
+  return { lines, changedIds };
 }
 
 export function formatWriteOutput(
@@ -61,21 +77,30 @@ export function formatWriteOutput(
   before: readonly TodoRootItem[] = [],
 ): string {
   const stats = new TodoTree(todos).calculateStats();
-  const base = `Todos (${stats.completedSubTasks}/${stats.totalSubTasks}) updated.`;
+  const base = `Todos (${stats.completedSubTasks}/${stats.totalSubTasks}).`;
   const next = findNextTodo(todos);
   const stuck = findStuckParent(todos);
+  const { lines, changedIds } = summarizeTransitions(before, todos);
 
-  const head = next
-    ? `${base} Next: ${next.id} "${next.content}". Continue immediately.`
+  // Only name the next step when it is not the row that just moved: repeating
+  // it would spend tokens on information the transition line already carries.
+  // A stuck parent reads better as an instruction than as another `Next:`.
+  const nextLine =
+    next && !changedIds.has(next.id)
+      ? stuck && stuck.id === next.id
+        ? `Mark ${next.id} done.`
+        : `Next: ${next.id} ${next.content}`
+      : undefined;
+
+  const tail = next
+    ? undefined
     : stuck
-      ? `${base} All children of ${stuck.id} "${stuck.content}" are done. Set ${stuck.id} to completed (or cancelled) to finish it.`
+      ? `Mark ${stuck.id} done.`
       : isAnyTodoActive(todos)
-        ? `${base} Open items remain. Call manage_todo_list [read] and resolve them.`
-        : `${base} All todos finished.`;
+        ? undefined
+        : "All done.";
 
-  const lines = formatTransitionLines(before, todos);
-  if (lines.length === 0) return head;
-  return `${head}\nPrint these lines to chat verbatim, then continue:\n${lines.join("\n")}`;
+  return [base, nextLine, ...lines, tail].filter(Boolean).join("\n");
 }
 
 export function assertWriteIsInitialization(
@@ -142,18 +167,15 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
 
         if (parsed.data.operation === "update") {
           const updateInput = parsed.data;
-          let updated: ReturnType<typeof updateTodoById>["updated"];
           let before: TodoRootItem[] = [];
           const todos = await updateTodos(toolContext.sessionID, (current) => {
             before = current;
-            const result = updateTodoById(current, updateInput);
-            updated = result.updated;
-            return result.todos;
+            return updateTodoById(current, updateInput).todos;
           });
 
           return {
             output: { todos },
-            content: `Updated ${updated!.scope} todo ${updated!.id}. ${formatUpdateOutput(todos, before)}`,
+            content: formatUpdateOutput(todos, before),
           };
         }
 
@@ -164,7 +186,7 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
         );
         if (rawTodos.length === 0) {
           await updateTodos(toolContext.sessionID, () => []);
-          return { output: { todos: [] }, content: "Cleared all todos." };
+          return { output: { todos: [] }, content: "Cleared." };
         }
 
         let before: TodoRootItem[] = [];
@@ -188,28 +210,39 @@ export async function registerTodoPromptHook(
   if (typeof ctx.session?.hook !== "function") return;
 
   const debug = process.env.TODO_HINT_DEBUG === "1";
+  const inject = async (sessionContext: {
+    sessionID: string;
+    system: Array<{ type: "text"; text: string }>;
+  }) => {
+    try {
+      if (!Array.isArray(sessionContext.system)) return;
+      if (
+        sessionContext.system.some(
+          (part) => part.type === "text" && part.text.includes("<todo_state>"),
+        )
+      ) {
+        return;
+      }
+      const hint = buildTodoHint(sessionContext.sessionID);
+      if (!hint) return;
+      sessionContext.system.push({ type: "text", text: hint });
+      if (debug) console.error("[todo] hint injected", sessionContext.sessionID);
+    } catch {
+      // Fail-safe
+    }
+  };
 
   try {
-    await ctx.session.hook("context", async (sessionContext) => {
-      try {
-        const system = sessionContext.system;
-        if (!Array.isArray(system)) {
-          if (debug) console.error("[todo] system is not an array");
-          return;
-        }
-        const hint = buildTodoHint(sessionContext.sessionID);
-        if (!hint) return;
-        system.push({ type: "text", text: hint });
-        if (debug)
-          console.error("[todo] hint injected", sessionContext.sessionID);
-      } catch {
-        // Fail-safe
-      }
-    });
-    return;
-  } catch {
-    // Fallback
-  }
+    await Promise.all([
+      ctx.session.hook("context", inject),
+      ctx.session.hook("compaction", inject),
+      ctx.session.hook("generate", inject),
+    ]);
+      return;
+    } catch {
+      if (debug)
+        console.error("[todo] model context hooks unavailable; using prompt fallback");
+    }
 
   try {
     await ctx.session.hook("prompt", async (sessionPrompt) => {

@@ -54,7 +54,7 @@ export function selectReadScope(
     : root?.children?.find((item) => item.id === target);
 
   if (!root || (!Number.isInteger(target) && !child)) {
-    throw new Error(`todo id ${target} was not found`);
+    throw new Error(`No todo ${target}.`);
   }
 
   // `root` shows the branch as-is; it needs no row filter at all.

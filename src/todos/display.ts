@@ -73,8 +73,3 @@ export function getTodoDisplaySummary(
 
   return { header, completed, total, items };
 }
-
-export function formatTodoProgress(todos: TodoRootItem[]): string | null {
-  const summary = getTodoDisplaySummary(todos);
-  return summary ? summary.header : null;
-}

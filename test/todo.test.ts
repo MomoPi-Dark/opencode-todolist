@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
     assertWriteIsInitialization,
     formatUpdateOutput,
+    formatWriteOutput,
 } from "../src/index";
 import { formatReadOutput, selectReadScope } from "../src/todos/read";
 import {
@@ -278,9 +279,103 @@ import { updateTodoById } from "../src/todos/update";
             id: "1.1",
             status: "completed",
         }).success,
+        true,
+    );
+    assert.equal(
+        TodoInputToolSchema.safeParse({
+            operation: "update",
+            id: "nope",
+            status: "completed",
+        }).success,
         false,
     );
     console.log("✔ enforces operation-specific input fields");
+}
+
+// Test 12b: Quoted numeric ids are accepted and coerced
+{
+    const asRoot = TodoInputToolSchema.safeParse({
+        operation: "update",
+        id: "4",
+        status: "completed",
+        note: "test update operation",
+    });
+    assert.equal(asRoot.success, true, "a quoted root id must be accepted");
+    if (asRoot.success && asRoot.data.operation === "update") {
+        assert.equal(asRoot.data.id, 4);
+        assert.equal(typeof asRoot.data.id, "number");
+    }
+
+    const asChild = TodoInputToolSchema.safeParse({
+        operation: "update",
+        id: "2.3",
+        status: "completed",
+    });
+    assert.equal(asChild.success, true, "a quoted child id must be accepted");
+    if (asChild.success && asChild.data.operation === "update") {
+        assert.equal(asChild.data.id, 2.3);
+    }
+
+    // Read targets follow the same rule.
+    assert.equal(
+        TodoInputToolSchema.safeParse({
+            operation: "read",
+            scope: "root",
+            target: "2",
+        }).success,
+        true,
+    );
+    assert.equal(
+        TodoInputToolSchema.safeParse({
+            operation: "read",
+            scope: "children",
+            target: "2.3",
+        }).success,
+        true,
+    );
+
+    // Write/nested ids too, so a model that quotes everything still works.
+    assert.equal(
+        TodoInputToolSchema.safeParse({
+            operation: "write",
+            todos: [
+                {
+                    id: "1",
+                    content: "Parent",
+                    status: "in_progress",
+                    children: [{ id: "1.1", content: "Child", status: "pending" }],
+                },
+            ],
+        }).success,
+        true,
+    );
+
+    // Non-numeric strings and non-numeric primitives stay rejected, and the
+    // message names the expected shape instead of zod's generic "Invalid input".
+    const bad = TodoInputToolSchema.safeParse({
+        operation: "update",
+        id: "abc",
+        status: "completed",
+    });
+    assert.equal(bad.success, false);
+    if (!bad.success) {
+        const message = bad.error.issues.map((i) => i.message).join(" ");
+        assert.ok(message.includes("remove the quotes"), message);
+    }
+
+    for (const value of [true, null, -3, "", {}]) {
+        assert.equal(
+            TodoInputToolSchema.safeParse({
+                operation: "update",
+                id: value,
+                status: "completed",
+            }).success,
+            false,
+            `id ${JSON.stringify(value)} must be rejected`,
+        );
+    }
+
+    console.log("✔ coerces quoted numeric ids and rejects non-numeric ones");
 }
 
 // Test 13: Updates one child without replacing the full tree
@@ -326,7 +421,7 @@ import { updateTodoById } from "../src/todos/update";
         status: "in_progress",
     };
     assert.equal(TodoInputToolSchema.safeParse(updateRoot4).success, true);
-    assert.throws(() => updateTodoById(todos, updateRoot4), /out of order/);
+    assert.throws(() => updateTodoById(todos, updateRoot4), /Finish or cancel it first/);
 
     const inOrder = updateTodoById(todos, {
         operation: "update",
@@ -352,7 +447,7 @@ import { updateTodoById } from "../src/todos/update";
                 id: 1,
                 status: "pending",
             }),
-        /only moves forward/,
+        /Forward-only/,
     );
 
     const withFinishedChild: TodoRootItem[] = [
@@ -370,7 +465,7 @@ import { updateTodoById } from "../src/todos/update";
                 id: 1.1,
                 status: "in_progress",
             }),
-        /final/,
+        /is completed/,
     );
     console.log("✔ keeps progress forward-only");
 }
@@ -397,7 +492,7 @@ import { updateTodoById } from "../src/todos/update";
                 id: 2.1,
                 status: "in_progress",
             }),
-        /still in_progress/,
+        /is running/,
     );
 
     const errFixAttempt: TodoUpdateInput = {
@@ -407,7 +502,7 @@ import { updateTodoById } from "../src/todos/update";
     };
     assert.throws(
         () => updateTodoById(todos, errFixAttempt),
-        /still in_progress/,
+        /is running/,
     );
 
     const idleError: TodoRootItem[] = [
@@ -461,10 +556,12 @@ import { updateTodoById } from "../src/todos/update";
         { id: 2, content: "Second", status: "in_progress" },
     ];
     const output = formatUpdateOutput(after, before);
-    assert.ok(output.includes("Todos (1/2)"));
-    assert.ok(output.includes('Next: 2 "Second"'));
-    assert.ok(output.includes("✓"));
-    assert.ok(output.includes("▶"));
+    assert.ok(output.includes("Todos (1/2)."));
+    // The item that just moved is named once, by its transition line; `Next:`
+    // must not repeat it.
+    assert.ok(!output.includes("Next:"), "no duplicate Next for the moved item");
+    assert.ok(output.includes("✓\uFE0E 1/2: First"));
+    assert.ok(output.includes("▶\uFE0E 2/2: Second"));
     console.log("✔ update response reports progress and transitions");
 }
 
@@ -599,15 +696,15 @@ import { updateTodoById } from "../src/todos/update";
                 scope: "children",
                 target: 9.9,
             }),
-        /todo id 9.9 was not found/,
+        /No todo 9.9/,
     );
     assert.throws(
         () => selectReadScope(base, { operation: "read", scope: "item", target: 99 }),
-        /todo id 99 was not found/,
+        /No todo 99/,
     );
     assert.throws(
         () => selectReadScope(base, { operation: "read", scope: "root", target: 42 }),
-        /todo id 42 was not found/,
+        /No todo 42/,
     );
 
     console.log("✔ scoped read narrows output and keeps root context for children");
@@ -680,4 +777,45 @@ import { updateTodoById } from "../src/todos/update";
     );
 
     console.log("✔ scoped read validation rejects impossible combinations");
+}
+
+// Test 24 (G0): Characterization — lock the exact output shape before the
+// terseness refactor. These strings are updated in G6, not deleted, so a
+// behaviour change has to be justified rather than silently accepted.
+{
+    const before: TodoRootItem[] = [
+        { id: 1, content: "First", status: "in_progress" },
+        { id: 2, content: "Second", status: "pending" },
+    ];
+    const after: TodoRootItem[] = [
+        { id: 1, content: "First", status: "completed" },
+        { id: 2, content: "Second", status: "in_progress" },
+    ];
+
+    assert.equal(
+        formatUpdateOutput(after, before),
+        "Todos (1/2).\n" +
+            "✓\uFE0E 1/2: First\n" +
+            "▶\uFE0E 2/2: Second",
+        "update output shape is locked",
+    );
+
+    const init: TodoRootItem[] = [
+        { id: 1, content: "A", status: "in_progress" },
+        { id: 2, content: "B", status: "pending" },
+    ];
+    assert.equal(
+        formatWriteOutput(init, []),
+        "Todos (0/2).\n" + "▶\uFE0E 1/2: A",
+        "initial write output shape is locked",
+    );
+
+    const done: TodoRootItem[] = [{ id: 1, content: "A", status: "completed" }];
+    assert.equal(
+        formatWriteOutput(done, [{ id: 1, content: "A", status: "in_progress" }]),
+        "Todos (1/1).\n" + "✓\uFE0E 1/1: A\n" + "All done.",
+        "finished output shape is locked",
+    );
+
+    console.log("✔ characterization: current output shape is locked");
 }
