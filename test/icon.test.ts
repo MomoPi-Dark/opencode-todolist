@@ -241,4 +241,32 @@ assert.ok(
 
 console.log("✔ built output keeps glyph and color reactivity");
 
+// ---------------------------------------------------------------------------
+// Row width calculation
+// ---------------------------------------------------------------------------
+const { RowWidth } = await import("../src/tui/layout.ts");
+
+// Root item without extra: icon(1) + " "(1) + "1. "(3) + "Title"(5) = 10
+assert.equal(
+    RowWidth({ id: 1, content: "Title", depth: 0 }),
+    10,
+    "basic root row width",
+);
+
+// Child item with depth 1: indent(2) + icon(1) + " "(1) + "1.1 "(4) + "Subtask"(7) = 15
+assert.equal(
+    RowWidth({ id: 1.1, content: "Subtask", depth: 1 }),
+    15,
+    "basic child row width with indentation",
+);
+
+// Row with elapsed time: adds " (45s)" which is 1 space + "(" + 3 chars + ")" = 6 chars
+assert.equal(
+    RowWidth({ id: 1, content: "Title", depth: 0, elapsed: "45s" }),
+    16,
+    "row width with elapsed time must include parentheses and leading space",
+);
+
+console.log("✔ RowWidth accounts for elapsed timer parentheses and depth");
+
 console.log("\n✔ Glyph suite passed");

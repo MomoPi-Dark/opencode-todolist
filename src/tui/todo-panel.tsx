@@ -204,6 +204,8 @@ export function TodoList(props: {
   rows: TodoListRow[];
   expandedIds?: readonly number[];
   scrollbarColor?: ColorInput;
+  arrowColor?: ColorInput;
+  maxRows?: number;
   activeIcon?: () => string;
   onToggleRow?: (id: number) => void;
   onToggleRoot?: (id: number) => void;
@@ -268,7 +270,11 @@ export function TodoList(props: {
     <scrollbox
       ref={attach}
       width="auto"
-      height={Math.min(entries().length, TODO_PANEL_MAX_ROWS)}
+      height={
+        props.maxRows
+          ? Math.min(entries().length, props.maxRows)
+          : entries().length
+      }
       {...scrollbarOptions()}
       horizontalScrollbarOptions={{ visible: false }}
     >
@@ -317,18 +323,6 @@ export function TodoList(props: {
                       {" "}({entry.row.elapsed})
                     </span>
                   </Show>
-                  <Show when={entry.row.status === "error"}>
-                    <span style={{ fg: props.scrollbarColor }}>
-                      {" "}
-                      {isExpanded(entry.row.id) ? "⌄" : "›"}
-                    </span>
-                  </Show>
-                  <Show when={entry.row.isExpandable}>
-                    <span style={{ fg: props.scrollbarColor }}>
-                      {" "}
-                      {entry.row.isRootCollapsed ? "›" : "⌄"}
-                    </span>
-                  </Show>
                 </text>
               </box>
             ) : (
@@ -349,7 +343,9 @@ export function TodoList(props: {
                 }}
               >
                 <text wrapMode="none">
-                  <span style={{ fg: props.scrollbarColor }}>
+                  <span
+                    style={{ fg: props.arrowColor ?? props.scrollbarColor }}
+                  >
                     {entry.row.depth > 0 ? "    " : "  "}
                     {ERROR_PREFIX}
                   </span>
@@ -466,14 +462,8 @@ export function TodoProgress(props: {
   const [animFrame, setAnimFrame] = createSignal(0);
   const [expandedIds, setExpandedIds] = createSignal<number[]>([]);
   const [manualRootToggles, setManualRootToggles] = createSignal<number[]>([]);
-  const [elapsedTick, setElapsedTick] = createSignal(0);
   const taskStartTimes = new Map<number, number>();
-
-  createEffect(() => {
-    if (!hasInProgress() || !isRunning()) return;
-    const interval = setInterval(() => setElapsedTick((t) => t + 1), 1000);
-    onCleanup(() => clearInterval(interval));
-  });
+  const taskDurations = new Map<number, string>();
 
   const clearHover = createHover();
   const continueHover = createHover();
@@ -592,20 +582,31 @@ export function TodoProgress(props: {
    */
   const rows = createMemo<TodoListRow[]>(() => {
     if (isCollapsed()) return [];
-    elapsedTick(); // subscribe to 1s elapsed timer
     const items = summary()?.items ?? [];
-    const activeIds = new Set<number>();
+    const currentItemIds = new Set(items.map((i) => i.id));
+
+    for (const id of taskStartTimes.keys()) {
+      if (!currentItemIds.has(id)) taskStartTimes.delete(id);
+    }
+    for (const id of taskDurations.keys()) {
+      if (!currentItemIds.has(id)) taskDurations.delete(id);
+    }
+
     for (const item of items) {
       if (item.status === "in_progress") {
-        activeIds.add(item.id);
         if (!taskStartTimes.has(item.id)) {
           taskStartTimes.set(item.id, Date.now());
         }
-      }
-    }
-    for (const id of taskStartTimes.keys()) {
-      if (!activeIds.has(id)) {
-        taskStartTimes.delete(id);
+      } else if (item.status === "completed") {
+        if (taskStartTimes.has(item.id)) {
+          const duration = formatElapsed(
+            Date.now() - taskStartTimes.get(item.id)!,
+          );
+          taskDurations.set(item.id, duration);
+          taskStartTimes.delete(item.id);
+        }
+      } else {
+        taskStartTimes.delete(item.id);
       }
     }
 
@@ -633,8 +634,8 @@ export function TodoProgress(props: {
         skipChildrenRootId = collapsed && hasChildren ? item.id : undefined;
 
         const elapsed =
-          item.status === "in_progress" && taskStartTimes.has(item.id)
-            ? formatElapsed(Date.now() - taskStartTimes.get(item.id)!)
+          item.status === "completed"
+            ? taskDurations.get(item.id)
             : undefined;
 
         result.push({
@@ -655,8 +656,8 @@ export function TodoProgress(props: {
         }
 
         const elapsed =
-          item.status === "in_progress" && taskStartTimes.has(item.id)
-            ? formatElapsed(Date.now() - taskStartTimes.get(item.id)!)
+          item.status === "completed"
+            ? taskDurations.get(item.id)
             : undefined;
 
         result.push({
@@ -710,6 +711,8 @@ export function TodoProgress(props: {
     const sid = sessionID();
     if (!sid) return;
     try {
+      taskStartTimes.clear();
+      taskDurations.clear();
       await writeTodos(sid, []);
       setRefresh((v) => v + 1);
     } catch (error) {
@@ -859,6 +862,7 @@ export function TodoProgress(props: {
                 rows={rows()}
                 expandedIds={expandedIds()}
                 activeIcon={activeIcon}
+                arrowColor={theme().text.muted}
                 onToggleRow={toggleRowNote}
                 onToggleRoot={toggleRoot}
               />
