@@ -189,14 +189,24 @@ If any item in the batch fails validation, the entire update is rolled back.
 }
 ```
 
-#### Sequential pair (finish current + start next):
+#### Sequential pair (finish current with note + start next):
+
+Every item in the batch supports all optional fields (`note`, `content`, `priority`):
 
 ```json
 {
   "operation": "update",
   "updates": [
-    { "id": 1.1, "status": "completed" },
-    { "id": 1.2, "status": "in_progress" }
+    {
+      "id": 1.1,
+      "status": "completed",
+      "note": "Unit tests passing and schema verified"
+    },
+    {
+      "id": 1.2,
+      "status": "in_progress",
+      "note": "Implementing UI integration"
+    }
   ]
 }
 ```
