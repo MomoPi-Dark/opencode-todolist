@@ -7,10 +7,11 @@ plus a TUI widget above the composer that shows progress in real time.
 
 - Hierarchical tasks: any number of root tasks, each with up to 9 subtasks.
 - Numeric IDs only: root `1`, `2`, … and subtasks `1.1`, `1.2`, … (`1.9` max).
-- Small partial updates: change one item without resending the whole list.
-- Scoped reads: pull the whole list, one branch, or a single item.
+- Atomic batch updates: update 1 item or sequential pairs (finish current + start next) in one call.
+- Cancel remaining on abort: pass `cancel_remaining: true` to auto-cancel pending siblings in the root.
+- Scoped reads & summaries: inspect the whole tree, a branch, single item, or compact markdown summary.
 - Strict forward-only progress with enforced order between root tasks.
-- Real-time TUI widget with collapse, scroll, `↻ Continue`, and clear controls.
+- Real-time TUI widget with active task elapsed timer, auto-collapse for completed roots, scroll, and controls.
 - Bundled skills that teach the agent how to drive the tool.
 
 ## Installation
@@ -41,17 +42,17 @@ dependencies, so `bun install` is required before use.
 
 #### Operation fields
 
-| Operation | Required fields             | Optional fields                |
-| --------- | --------------------------- | ------------------------------ |
-| `read`    | `operation`                 | `scope`, `target`              |
-| `write`   | `operation`, `todos`        | None; use `todos: []` to clear |
-| `update`  | `operation`, `id`, `status` | `content`, `priority`, `note`  |
+| Operation | Required fields        | Optional fields                          |
+| --------- | ---------------------- | ---------------------------------------- |
+| `read`    | `operation`            | `scope`, `target`, `format`              |
+| `write`   | `operation`, `todos`   | None; use `todos: []` to clear           |
+| `update`  | `operation`, `updates` | None                                     |
 
 For `update`, send `null` for `priority` or `note` to remove the existing value.
 
 ### Read
 
-By default `read` returns the whole list. An optional `scope` narrows it to one
+By default `read` returns the whole list as a tree. An optional `scope` narrows it to one
 branch or one row, which keeps the response small on a long list.
 
 | `scope`    | `target`            | Returns                                      |
@@ -64,6 +65,21 @@ branch or one row, which keeps the response small on a long list.
 `target` is only valid together with `scope: "root"`, `"children"`, or
 `"item"` — passing it without one is rejected, so a scope can never be silently
 ignored.
+
+#### Compact summary format
+
+Pass `format: "summary"` to get a compact markdown list of completed tasks with notes (ideal for subagent prompt injection or context handoff):
+
+```json
+{ "operation": "read", "format": "summary" }
+```
+
+```text
+- [x] 1.1 Database schema: created migrations
+- [x] 1.2 API endpoints: handlers verified
+```
+
+#### Progress tree format
 
 The whole list:
 
@@ -154,27 +170,63 @@ Root IDs must be unique. A child ID must start with its parent root ID.
 
 ### Update
 
-`update` changes one existing root or subtask. Send only the fields that change;
-`status` is required.
+`update` modifies existing items through the `updates` property. It accepts:
+1. **A single update object** for changing one task.
+2. **An array of 1 to 2 update objects** applied sequentially in array order in a single transaction (ideal for finishing the active task and starting the next one).
+
+If any item in the batch fails validation, the entire update is rolled back.
+
+#### Single update:
 
 ```json
 {
   "operation": "update",
-  "id": 1.1,
-  "status": "completed",
-  "note": "Tests passing"
+  "updates": {
+    "id": 1.1,
+    "status": "completed",
+    "note": "Tests passing"
+  }
 }
 ```
 
-### Fields
+#### Sequential pair (finish current + start next):
 
-| Field      | Required | Notes                                                        |
-| ---------- | -------- | ------------------------------------------------------------ |
-| `id`       | Yes      | Root number or subtask number (`1`, `1.1`).                  |
-| `status`   | Yes      | `pending`, `in_progress`, `completed`, `cancelled`, `error`. |
-| `content`  | No       | One-line summary shown in the widget.                        |
-| `note`     | No       | Technical context or evidence. Pass `null` to remove.        |
-| `priority` | No       | `high`, `medium`, or `low`. Pass `null` to remove.           |
+```json
+{
+  "operation": "update",
+  "updates": [
+    { "id": 1.1, "status": "completed" },
+    { "id": 1.2, "status": "in_progress" }
+  ]
+}
+```
+
+#### Cancel remaining on abort:
+
+Set `cancel_remaining: true` when marking a task `error` or `cancelled` to automatically cancel any remaining `pending` subtasks in that root:
+
+```json
+{
+  "operation": "update",
+  "updates": {
+    "id": 1.2,
+    "status": "error",
+    "cancel_remaining": true,
+    "note": "Fatal build error"
+  }
+}
+```
+
+### Update Item Fields
+
+| Field              | Required | Notes                                                                                    |
+| ------------------ | -------- | ---------------------------------------------------------------------------------------- |
+| `id`               | Yes      | Root number or subtask number (`1`, `1.1`). String numbers like `"1.1"` are also coerced.|
+| `status`           | Yes      | `pending`, `in_progress`, `completed`, `cancelled`, `error`.                             |
+| `content`          | No       | One-line summary shown in the widget.                                                    |
+| `note`             | No       | Technical context or evidence. Pass `null` to remove.                                    |
+| `priority`         | No       | `high`, `medium`, or `low`. Pass `null` to remove.                                       |
+| `cancel_remaining` | No       | `boolean`. If `true` with `error`/`cancelled`, cancels remaining pending subtasks in root|
 
 ## Skills
 
