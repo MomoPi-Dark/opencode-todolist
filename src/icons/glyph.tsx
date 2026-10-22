@@ -89,24 +89,3 @@ export function Glyph(props: GlyphProps) {
     );
 }
 
-/**
- * The zero-configuration variant: only a glyph and an optional colour, with
- * auto width and height. Use this unless a specific box is required.
- */
-export function GlyphAuto(props: {
-    glyph: (() => string) | string;
-    color?: ColorInput;
-}) {
-    return <Glyph glyph={props.glyph} color={props.color} />;
-}
-
-/**
- * The stretch variant: fills `100%` of the parent on both axes, so the size
- * follows the surrounding layout without hand-tuned numbers.
- */
-export function GlyphFill(props: {
-    glyph: (() => string) | string;
-    color?: ColorInput;
-}) {
-    return <Glyph glyph={props.glyph} color={props.color} fill />;
-}

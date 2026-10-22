@@ -1,6 +1,10 @@
-import { readTodoData, takeHintRevision, TodoStore } from "../storage/todo-store";
-import type { TodoChildren, TodoRootItem } from "../schemas/todo";
 import type { TodoStatus } from "../schemas/status";
+import type { TodoChildren, TodoRootItem } from "../schemas/todo";
+import {
+  readTodoData,
+  takeHintRevision,
+  TodoStore,
+} from "../storage/todo-store";
 import { TodoTree } from "./todo-tree";
 
 export const DEFAULT_STALE_MS = 30 * 60 * 1000; // 30 minutes (prompt fallback)
@@ -64,8 +68,6 @@ export function consumeTodoHint(
       return undefined;
     }
 
-    // Atomic: reads the previous marker and records this revision in one step,
-    // so two rapid calls cannot both emit the hint.
     const previous = takeHintRevision(safeSessionID, state.version);
     if (previous === state.version) return undefined;
 
@@ -82,7 +84,6 @@ export function flattenLeaves(todos: readonly TodoRootItem[]): Leaf[] {
 }
 
 export function findNextTodo(todos: readonly TodoRootItem[]): Leaf | undefined {
-  // Strict order: only the first open root is relevant; later roots wait.
   for (const root of todos) {
     if (root.status === "completed" || root.status === "cancelled") continue;
 

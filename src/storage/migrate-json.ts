@@ -44,22 +44,6 @@ const FILE_PREFIX = "todos-";
 const FILE_SUFFIX = ".json";
 const MIGRATED_SUFFIX = ".json.migrated";
 
-/** `todos-<ts>.json` holds the payload; `version` holds the counter. */
-export function readLegacyVersion(sessionDir: string): number {
-  for (const candidate of [
-    join(sessionDir, "version"),
-    join(sessionDir, "todos", "version"),
-  ]) {
-    try {
-      const value = Number.parseInt(readFileSync(candidate, "utf8").trim(), 10);
-      if (Number.isSafeInteger(value) && value >= 0) return value;
-    } catch {
-      // try the next candidate
-    }
-  }
-  return 0;
-}
-
 /** Newest payload file wins, matching the old "latest wins" behaviour. */
 export function findLegacyTodoFile(sessionDir: string): string | undefined {
   for (const dir of [join(sessionDir, "todos"), sessionDir]) {

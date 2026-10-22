@@ -430,7 +430,10 @@ export function TodoProgress(props: {
   const theme = () => context.theme;
 
   const [refresh, setRefresh] = createSignal(0);
-  const [isCollapsed, setIsCollapsed] = createSignal(true);
+  // The panel only renders when a list exists, so starting expanded is what
+  // makes `manage_todo_list [write]` visible the moment it lands. Collapsed by
+  // default hid the rows behind a click and looked like nothing was rendered.
+  const [isCollapsed, setIsCollapsed] = createSignal(false);
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
   const [expandedIds, setExpandedIds] = createSignal<number[]>([]);

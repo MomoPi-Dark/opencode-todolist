@@ -8,10 +8,6 @@ export default Plugin.define({
     const releaseSlot = context.ui.slot({
       append: "session.composer.top",
       render: (props) => {
-        const directory = context.data.session.get(props.sessionID)?.location
-          .directory;
-        if (!directory) return null;
-
         return (
           <RendererContext.Provider value={context.renderer}>
             <TodoProgress context={context} sessionID={props.sessionID} />
