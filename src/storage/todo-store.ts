@@ -9,14 +9,12 @@ import {
   getDatabase,
   getDataVersion as readDataVersion,
   resetDatabaseForTests,
-  resolveMigrationsFolder,
   type TodoDatabaseHandle,
 } from "./db";
 import {
   importLegacyJson,
   mutateSessionTodos,
   readRevision,
-  replaceSessionTodos,
   selectTodos,
 } from "./migrate-json";
 import { todoSession } from "./schema";
@@ -70,15 +68,6 @@ export class TodoStore {
   constructor(private readonly ctx: PlatformContext = {}) {}
 
   // Static helpers
-
-  public static isMissingFile(error: unknown): boolean {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code: string }).code === "ENOENT"
-    );
-  }
 
   public static normalizeSessionID(sessionID: string): string {
     const normalized = sessionID.trim();
@@ -156,27 +145,6 @@ export class TodoStore {
     }
   }
 
-  public resolveConfigHome(): string {
-    const { env, platform } = this;
-    if (env.XDG_CONFIG_HOME) return env.XDG_CONFIG_HOME;
-
-    if (platform === "win32") {
-      if (env.APPDATA) return env.APPDATA;
-      if (env.LOCALAPPDATA) return env.LOCALAPPDATA;
-      return this.joinForPlatform(this.resolveHomeDir(), "AppData", "Roaming");
-    }
-
-    if (platform === "darwin") {
-      return this.joinForPlatform(
-        this.resolveHomeDir(),
-        "Library",
-        "Application Support",
-      );
-    }
-
-    return this.joinForPlatform(this.resolveHomeDir(), ".config");
-  }
-
   /**
    * Base directory holding the database and the legacy session folders.
    *
@@ -187,10 +155,6 @@ export class TodoStore {
   public resolveTodosBaseDir(): string {
     if (this.env.OPENCODE_TODOS_DIR) return this.env.OPENCODE_TODOS_DIR;
     return this.joinForPlatform(this.resolveHomeDir(), ".opencode", "sessions");
-  }
-
-  get todosRoot(): string {
-    return this.getTodosDirectory();
   }
 
   public getDatabasePath(): string {
@@ -216,18 +180,6 @@ export class TodoStore {
     const baseDir = this.resolveTodosBaseDir();
     if (!sessionID) return baseDir;
     return join(this.getSessionDirectory(sessionID), "todos");
-  }
-
-  /**
-   * Path of the legacy hint marker.
-   *
-   * The marker now lives in `todo_session.hint_revision`, so nothing writes
-   * here. The path is still exposed because callers may need to locate and
-   * clean up a leftover file from an older install.
-   */
-  public getHintMarkerPath(sessionID: string): string {
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    return join(this.getTodosDirectory(safeSessionID), "hint-marker.json");
   }
 
   // Connection
@@ -344,10 +296,6 @@ export class TodoStore {
     return readDataVersion(this.database().sqlite);
   }
 
-  public migrationsFolder(): string {
-    return resolveMigrationsFolder();
-  }
-
   // Public write API
 
   public async writeTodos(
@@ -378,11 +326,6 @@ export class TodoStore {
     }).todos;
   }
 
-  /** Replaces a list without running the tree validation (import path). */
-  public replaceTodosSync(sessionID: string, todos: TodoRootItem[]): void {
-    replaceSessionTodos(this.database(), this.resolveKey(sessionID), todos);
-  }
-
   /**
    * Drops the cached connection so the next call reopens from scratch.
    *
@@ -408,11 +351,6 @@ export const getTodosDirectory = (sessionID?: string) =>
   defaultStore.getTodosDirectory(sessionID);
 export const getDatabasePath = () => defaultStore.getDatabasePath();
 export const sessionKey = (sessionID: string) => TodoStore.sessionKey(sessionID);
-export const legacySessionKey = (sessionID: string) =>
-  TodoStore.legacyKey(sessionID);
-/** @deprecated Use {@link legacySessionKey}; the hash is no longer the key. */
-export const hashSessionID = (sessionID: string) =>
-  TodoStore.hashSessionID(sessionID);
 export const readTodos = (sessionID: string) => defaultStore.readTodos(sessionID);
 export const readTodosSync = (sessionID: string) =>
   defaultStore.readTodosSync(sessionID);
@@ -424,8 +362,6 @@ export const updateTodos = (
 ) => defaultStore.updateTodos(sessionID, update);
 export const readTodoData = (sessionID: string) =>
   defaultStore.readTodoData(sessionID);
-export const getHintMarkerPath = (sessionID: string) =>
-  defaultStore.getHintMarkerPath(sessionID);
 export const getRevision = (sessionID: string) =>
   defaultStore.getRevision(sessionID);
 export const takeHintRevision = (sessionID: string, revision: number) =>

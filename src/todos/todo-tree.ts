@@ -43,8 +43,6 @@ export class TodoTree {
   };
 
   private static readonly DEFAULT_ICON = "[ ]";
-  private static readonly BAR_FILLED = "█";
-  private static readonly BAR_UNFILLED = "░";
 
   constructor(readonly todos: readonly TodoRootItem[]) { }
 
@@ -64,20 +62,6 @@ export class TodoTree {
     ).length;
     const total = nonCancelled.length;
     return { completed, total, label: `${completed}/${total}` };
-  }
-
-  static renderProgressBar(
-    percent: number,
-    width: number = 10,
-  ): { filled: string; unfilled: string } {
-    const clamped = Math.max(0, Math.min(100, percent));
-    const filledCount = Math.round((clamped / 100) * width);
-    const unfilledCount = width - filledCount;
-
-    return {
-      filled: TodoTree.BAR_FILLED.repeat(filledCount),
-      unfilled: TodoTree.BAR_UNFILLED.repeat(unfilledCount),
-    };
   }
 
   /**
