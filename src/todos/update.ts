@@ -1,10 +1,10 @@
 import type { Priority, TodoStatus } from "../schemas/status";
 import type {
   TodoRootItem,
-  TodoUpdateInput
+  TodoUpdateItem
 } from "../schemas/todo";
 
-type UpdateFields = Omit<TodoUpdateInput, "id">;
+type UpdateFields = Omit<TodoUpdateItem, "id">;
 type UpdatableTodo = {
   content: string;
   status: TodoStatus;
@@ -95,7 +95,7 @@ function hasError(root: TodoRootItem): boolean {
  */
 export function assertSequentialScope(
   todos: TodoRootItem[],
-  input: TodoUpdateInput,
+  input: TodoUpdateItem,
 ): { targetRoot: TodoRootItem; target: UpdatableTodo } {
   const targetRoot = todos.find(
     (root) =>
@@ -158,35 +158,92 @@ export function assertSequentialScope(
 
 export function updateTodoById(
   todos: TodoRootItem[],
-  input: TodoUpdateInput,
-): { todos: TodoRootItem[]; updated: UpdatedTodo } {
+  updates: readonly TodoUpdateItem[],
+): { todos: TodoRootItem[]; updated: UpdatedTodo[] } {
+  let state = todos;
+  const updated: UpdatedTodo[] = [];
+
+  // Sequential: each item is validated against the state left by the previous
+  // one, not against the original list. That is what makes the pair
+  // "1.1 completed, 1.2 in_progress" legal — 1.2 only stops being blocked by a
+  // busy child once 1.1 is finished. Validating everything against `todos`
+  // instead would reject the second item with "1.1 is running".
+  for (const input of updates) {
+    const result = applyOne(state, input);
+    state = result.todos;
+    updated.push(...result.updated);
+  }
+
+  return { todos: state, updated };
+}
+
+/** Applies one update against the list as it stands right now. */
+function applyOne(
+  todos: TodoRootItem[],
+  input: TodoUpdateItem,
+): { todos: TodoRootItem[]; updated: UpdatedTodo[] } {
   const { targetRoot } = assertSequentialScope(todos, input);
-  let updated: UpdatedTodo | undefined;
+  let primaryUpdated: UpdatedTodo | undefined;
+  const cancelledTodos: UpdatedTodo[] = [];
+
+  const shouldCancelRemaining =
+    input.cancel_remaining === true &&
+    (input.status === "error" || input.status === "cancelled");
 
   const nextTodos = todos.map((root) => {
     if (root.id === input.id) {
       const item = applyUpdate(root, input);
-      updated = {
+      primaryUpdated = {
         id: item.id,
         scope: "root",
         content: item.content,
         status: item.status,
       };
+
+      if (shouldCancelRemaining && item.children) {
+        const children = item.children.map((child) => {
+          if (child.status === "pending") {
+            cancelledTodos.push({
+              id: child.id,
+              scope: "child",
+              content: child.content,
+              status: "cancelled",
+            });
+            return { ...child, status: "cancelled" as const };
+          }
+          return child;
+        });
+        return { ...item, children };
+      }
+
       return item;
     }
 
     if (root.id !== targetRoot.id) return root;
 
     const children = (root.children ?? []).map((child) => {
-      if (child.id !== input.id) return child;
-      const item = applyUpdate(child, input);
-      updated = {
-        id: item.id,
-        scope: "child",
-        content: item.content,
-        status: item.status,
-      };
-      return item;
+      if (child.id === input.id) {
+        const item = applyUpdate(child, input);
+        primaryUpdated = {
+          id: item.id,
+          scope: "child",
+          content: item.content,
+          status: item.status,
+        };
+        return item;
+      }
+
+      if (shouldCancelRemaining && child.status === "pending") {
+        cancelledTodos.push({
+          id: child.id,
+          scope: "child",
+          content: child.content,
+          status: "cancelled",
+        });
+        return { ...child, status: "cancelled" as const };
+      }
+
+      return child;
     });
 
     // A running child implies a running parent. Finished or errored parents
@@ -199,9 +256,9 @@ export function updateTodoById(
     return { ...root, status, children };
   });
 
-  if (!updated) {
+  if (!primaryUpdated) {
     throw new Error(`No todo ${input.id}.`);
   }
 
-  return { todos: nextTodos, updated };
+  return { todos: nextTodos, updated: [primaryUpdated, ...cancelledTodos] };
 }

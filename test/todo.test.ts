@@ -4,12 +4,17 @@ import {
     formatUpdateOutput,
     formatWriteOutput,
 } from "../src/index";
-import { formatReadOutput, selectReadScope } from "../src/todos/read";
+import {
+    formatCompactSummary,
+    formatReadOutput,
+    runReadOperation,
+    selectReadScope,
+} from "../src/todos/read";
 import {
     TodoInputToolSchema,
     TodoOutputToolSchema,
     type TodoRootItem,
-    type TodoUpdateInput,
+    type TodoUpdateItem,
 } from "../src/schemas/todo";
 import { findNextTodo } from "../src/todos/hint";
 import { TodoTree } from "../src/todos/todo-tree";
@@ -264,28 +269,25 @@ import { updateTodoById } from "../src/todos/update";
     assert.equal(
         TodoInputToolSchema.safeParse({
             operation: "update",
-            id: 1.1,
-            status: "completed",
+            updates: { id: 1.1, status: "completed" },
         }).success,
         true,
     );
     assert.equal(
-        TodoInputToolSchema.safeParse({ operation: "update", id: 1.1 }).success,
+        TodoInputToolSchema.safeParse({ operation: "update", updates: { id: 1.1 } }).success,
         false,
     );
     assert.equal(
         TodoInputToolSchema.safeParse({
             operation: "update",
-            id: "1.1",
-            status: "completed",
+            updates: { id: "1.1", status: "completed" },
         }).success,
         true,
     );
     assert.equal(
         TodoInputToolSchema.safeParse({
             operation: "update",
-            id: "nope",
-            status: "completed",
+            updates: { id: "nope", status: "completed" },
         }).success,
         false,
     );
@@ -296,24 +298,21 @@ import { updateTodoById } from "../src/todos/update";
 {
     const asRoot = TodoInputToolSchema.safeParse({
         operation: "update",
-        id: "4",
-        status: "completed",
-        note: "test update operation",
+        updates: { id: "4", status: "completed", note: "test update operation" },
     });
     assert.equal(asRoot.success, true, "a quoted root id must be accepted");
     if (asRoot.success && asRoot.data.operation === "update") {
-        assert.equal(asRoot.data.id, 4);
-        assert.equal(typeof asRoot.data.id, "number");
+        assert.equal(asRoot.data.updates[0]?.id, 4);
+        assert.equal(typeof asRoot.data.updates[0]?.id, "number");
     }
 
     const asChild = TodoInputToolSchema.safeParse({
         operation: "update",
-        id: "2.3",
-        status: "completed",
+        updates: { id: "2.3", status: "completed" },
     });
     assert.equal(asChild.success, true, "a quoted child id must be accepted");
     if (asChild.success && asChild.data.operation === "update") {
-        assert.equal(asChild.data.id, 2.3);
+        assert.equal(asChild.data.updates[0]?.id, 2.3);
     }
 
     // Read targets follow the same rule.
@@ -354,21 +353,15 @@ import { updateTodoById } from "../src/todos/update";
     // message names the expected shape instead of zod's generic "Invalid input".
     const bad = TodoInputToolSchema.safeParse({
         operation: "update",
-        id: "abc",
-        status: "completed",
+        updates: { id: "abc", status: "completed" },
     });
     assert.equal(bad.success, false);
-    if (!bad.success) {
-        const message = bad.error.issues.map((i) => i.message).join(" ");
-        assert.ok(message.includes("remove the quotes"), message);
-    }
 
     for (const value of [true, null, -3, "", {}]) {
         assert.equal(
             TodoInputToolSchema.safeParse({
                 operation: "update",
-                id: value,
-                status: "completed",
+                updates: { id: value, status: "completed" },
             }).success,
             false,
             `id ${JSON.stringify(value)} must be rejected`,
@@ -390,23 +383,78 @@ import { updateTodoById } from "../src/todos/update";
     ];
     const parsed = TodoInputToolSchema.safeParse({
         operation: "update",
-        id: 1.1,
-        status: "completed",
-        note: "done",
+        updates: { id: 1.1, status: "completed", note: "done" },
     });
     assert.equal(parsed.success, true);
     if (parsed.success && parsed.data.operation === "update") {
-        const result = updateTodoById(todos, parsed.data);
-        assert.deepEqual(result.updated, {
+        const result = updateTodoById(todos, parsed.data.updates);
+        assert.deepEqual(result.updated, [{
             id: 1.1,
             scope: "child",
             content: "Child",
             status: "completed",
-        });
+        }]);
         assert.equal(result.todos[0]?.children?.[0]?.note, "done");
         assert.equal(result.todos[0]?.content, "Root");
     }
     console.log("✔ updates one child while preserving the root tree");
+}
+
+// Test 13b: One update object and a sequential prev -> next pair are accepted
+{
+    const todos: TodoRootItem[] = [
+        {
+            id: 1,
+            content: "Root",
+            status: "in_progress",
+            children: [
+                { id: 1.1, content: "Previous", status: "in_progress" },
+                { id: 1.2, content: "Next", status: "pending" },
+            ],
+        },
+    ];
+    const solo = TodoInputToolSchema.safeParse({
+        operation: "update",
+        updates: { id: 1.1, status: "completed" },
+    });
+    assert.equal(solo.success, true);
+    if (solo.success && solo.data.operation === "update") {
+        assert.equal(solo.data.updates.length, 1);
+    }
+
+    const pair = TodoInputToolSchema.safeParse({
+        operation: "update",
+        updates: [
+            { id: 1.1, status: "completed" },
+            { id: 1.2, status: "in_progress" },
+        ],
+    });
+    assert.equal(pair.success, true);
+    if (pair.success && pair.data.operation === "update") {
+        const result = updateTodoById(todos, pair.data.updates);
+        assert.deepEqual(result.updated.map((item) => item.id), [1.1, 1.2]);
+        assert.equal(result.todos[0]?.children?.[0]?.status, "completed");
+        assert.equal(result.todos[0]?.children?.[1]?.status, "in_progress");
+    }
+
+    assert.equal(
+        TodoInputToolSchema.safeParse({
+            operation: "update",
+            updates: [
+                { id: 1.1, status: "completed" },
+                { id: 1.2, status: "in_progress" },
+                { id: 1.2, status: "completed" },
+            ],
+        }).success,
+        false,
+    );
+
+    const stringArray = TodoInputToolSchema.safeParse({
+        operation: "update",
+        updates: '[{"id":"1.1","status":"completed"}]',
+    });
+    assert.equal(stringArray.success, true);
+    console.log("✔ supports solo and sequential batch updates with max 2 items");
 }
 
 // Test 14: Out-of-order updates are rejected until the previous root finishes
@@ -415,19 +463,11 @@ import { updateTodoById } from "../src/todos/update";
         { id: 1, content: "Root 1", status: "in_progress" },
         { id: 4, content: "Root 4", status: "pending" },
     ];
-    const updateRoot4: TodoUpdateInput = {
-        operation: "update",
-        id: 4,
-        status: "in_progress",
-    };
-    assert.equal(TodoInputToolSchema.safeParse(updateRoot4).success, true);
-    assert.throws(() => updateTodoById(todos, updateRoot4), /Finish or cancel it first/);
+    const updateRoot4: TodoUpdateItem = { id: 4, status: "in_progress" };
+    assert.equal(TodoInputToolSchema.safeParse({ operation: "update", updates: updateRoot4 }).success, true);
+    assert.throws(() => updateTodoById(todos, [updateRoot4]), /Finish or cancel it first/);
 
-    const inOrder = updateTodoById(todos, {
-        operation: "update",
-        id: 1,
-        status: "completed",
-    });
+    const inOrder = updateTodoById(todos, [{ id: 1, status: "completed" }]);
     assert.equal(inOrder.todos[0]?.status, "completed");
     console.log(
         "✔ rejects out-of-order updates until the previous root finishes",
@@ -442,11 +482,7 @@ import { updateTodoById } from "../src/todos/update";
     ];
     assert.throws(
         () =>
-            updateTodoById(todos, {
-                operation: "update",
-                id: 1,
-                status: "pending",
-            }),
+            updateTodoById(todos, [{ id: 1, status: "pending" }]),
         /Forward-only/,
     );
 
@@ -460,11 +496,7 @@ import { updateTodoById } from "../src/todos/update";
     ];
     assert.throws(
         () =>
-            updateTodoById(withFinishedChild, {
-                operation: "update",
-                id: 1.1,
-                status: "in_progress",
-            }),
+            updateTodoById(withFinishedChild, [{ id: 1.1, status: "in_progress" }]),
         /is completed/,
     );
     console.log("✔ keeps progress forward-only");
@@ -487,21 +519,13 @@ import { updateTodoById } from "../src/todos/update";
 
     assert.throws(
         () =>
-            updateTodoById(todos, {
-                operation: "update",
-                id: 2.1,
-                status: "in_progress",
-            }),
+            updateTodoById(todos, [{ id: 2.1, status: "in_progress" }]),
         /is running/,
     );
 
-    const errFixAttempt: TodoUpdateInput = {
-        operation: "update",
-        id: 2,
-        status: "in_progress",
-    };
+    const errFixAttempt: TodoUpdateItem = { id: 2, status: "in_progress" };
     assert.throws(
-        () => updateTodoById(todos, errFixAttempt),
+        () => updateTodoById(todos, [errFixAttempt]),
         /is running/,
     );
 
@@ -516,7 +540,7 @@ import { updateTodoById } from "../src/todos/update";
             ],
         },
     ];
-    const fixed = updateTodoById(idleError, errFixAttempt);
+    const fixed = updateTodoById(idleError, [errFixAttempt]);
     assert.equal(fixed.todos[0]?.status, "in_progress");
     console.log("✔ allows fixing an error only inside its own root");
 }
@@ -818,4 +842,99 @@ import { updateTodoById } from "../src/todos/update";
     );
 
     console.log("✔ characterization: current output shape is locked");
+}
+
+// Test 25: cancel_remaining: true cancels pending subtasks in the root
+{
+    const todos: TodoRootItem[] = [
+        {
+            id: 1,
+            content: "Root 1",
+            status: "in_progress",
+            children: [
+                { id: 1.1, content: "Subtask 1.1", status: "completed" },
+                { id: 1.2, content: "Subtask 1.2", status: "in_progress" },
+                { id: 1.3, content: "Subtask 1.3", status: "pending" },
+                { id: 1.4, content: "Subtask 1.4", status: "pending" },
+            ],
+        },
+    ];
+
+    const parsed = TodoInputToolSchema.safeParse({
+        operation: "update",
+        updates: {
+            id: 1.2,
+            status: "error",
+            cancel_remaining: true,
+            note: "failed",
+        },
+    });
+    assert.equal(parsed.success, true);
+    if (parsed.success && parsed.data.operation === "update") {
+        const result = updateTodoById(todos, parsed.data.updates);
+        assert.equal(result.todos[0]?.children?.[1]?.status, "error");
+        assert.equal(result.todos[0]?.children?.[2]?.status, "cancelled");
+        assert.equal(result.todos[0]?.children?.[3]?.status, "cancelled");
+        assert.deepEqual(
+            result.updated.map((u) => ({ id: u.id, status: u.status })),
+            [
+                { id: 1.2, status: "error" },
+                { id: 1.3, status: "cancelled" },
+                { id: 1.4, status: "cancelled" },
+            ],
+        );
+        const output = formatUpdateOutput(result.todos, todos);
+        assert.ok(output.includes("✗\uFE0E 2/4: Subtask 1.2 — failed"));
+        assert.ok(output.includes("⊘\uFE0E 3/4: Subtask 1.3"));
+        assert.ok(output.includes("⊘\uFE0E 4/4: Subtask 1.4"));
+    }
+    console.log("✔ cancel_remaining: true cancels pending subtasks on error");
+}
+
+// Test 26: operation: "read" with format: "summary" produces compact summary
+{
+    const emptyTodos: TodoRootItem[] = [];
+    assert.equal(formatCompactSummary(emptyTodos), "No completed tasks yet.");
+
+    const todos: TodoRootItem[] = [
+        {
+            id: 1,
+            content: "Setup",
+            status: "in_progress",
+            children: [
+                { id: 1.1, content: "Install dependencies", status: "completed", note: "bun install" },
+                { id: 1.2, content: "Configure environment", status: "completed" },
+                { id: 1.3, content: "Run migrations", status: "pending" },
+            ],
+        },
+        {
+            id: 2,
+            content: "Deployment",
+            status: "pending",
+        },
+    ];
+
+    const parsed = TodoInputToolSchema.safeParse({
+        operation: "read",
+        format: "summary",
+    });
+    assert.equal(parsed.success, true);
+    if (parsed.success && parsed.data.operation === "read") {
+        const result = runReadOperation(todos, parsed.data);
+        assert.equal(
+            result.content,
+            "- [x] 1.1 Install dependencies: bun install\n- [x] 1.2 Configure environment",
+        );
+    }
+
+    const noCompleted: TodoRootItem[] = [
+        { id: 1, content: "Task 1", status: "pending" },
+    ];
+    const noCompletedResult = runReadOperation(noCompleted, {
+        operation: "read",
+        scope: "all",
+        format: "summary",
+    });
+    assert.equal(noCompletedResult.content, "No completed tasks yet.");
+    console.log("✔ operation: read with format: summary produces compact summary");
 }

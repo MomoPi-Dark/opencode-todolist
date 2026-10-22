@@ -83,21 +83,52 @@ Returns the current todos as a progress tree:
 [ ] 3. Write tests
 ```
 
+Use `format: "summary"` for a compact bulleted list of completed items and notes (ideal for context handoff or subagent prompts):
+
+```json
+{ "operation": "read", "format": "summary" }
+```
+
 Markers: `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]` cancelled, `[!]` error.
 
-### Update one item
+### Update one or two items
 
-Use a numeric root ID (`1`) or child ID (`1.1`) and send only changed fields.
-`status` is required:
+Use `updates` with one object for a single change, or an array with at most two
+objects for sequential `prev` then `new` changes. Each object uses a numeric
+root ID (`1`) or child ID (`1.1`) and sends only changed fields. `status` is
+required:
 
 ```json
 {
   "operation": "update",
-  "id": 1.1,
-  "status": "completed",
-  "note": "tests passing"
+  "updates": { "id": 1.1, "status": "completed", "note": "tests passing" }
 }
 ```
+
+To finish the current item and start the next one in the same transaction:
+
+```json
+{
+  "operation": "update",
+  "updates": [
+    { "id": 1.1, "status": "completed" },
+    { "id": 1.2, "status": "in_progress" }
+  ]
+}
+```
+
+To abort a task and cancel all remaining pending subtasks in that root at once:
+
+```json
+{
+  "operation": "update",
+  "updates": { "id": 1.2, "status": "error", "cancel_remaining": true, "note": "failed" }
+}
+```
+
+Array order is execution order. The array accepts one or two objects only;
+the second object is validated against the state left by the first. If either
+object fails, the whole update is rolled back.
 
 Order rules enforced by the tool:
 
@@ -116,7 +147,7 @@ Use `error` when a step **failed** and needs a decision. It is an *open*
 status: the list stays active, `error` is never counted as progress, and the
 step is reported to the user as the next thing to resolve. Put the reason in
 `note` — the TUI shows it when the row is clicked and it is appended to the
-`✗  Error (n/t): <task> — <reason>` transition line. Then either fix it (back
+  `✗︎ n/t: <task> — <reason>` transition line. Then either fix it (back
 to `in_progress`/`completed`) or mark it `cancelled` if it is no longer needed.
 A parent cannot be `completed` while any child is `error`.
 

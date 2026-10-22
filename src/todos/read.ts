@@ -65,12 +65,43 @@ export function selectReadScope(
   return { todos: [root], visibleIds };
 }
 
+/**
+ * Render a compact summary of completed tasks with notes.
+ */
+export function formatCompactSummary(
+  todos: readonly TodoRootItem[],
+  options?: { visibleIds?: readonly number[] },
+): string {
+  const visible =
+    options?.visibleIds === undefined
+      ? undefined
+      : new Set(options.visibleIds);
+  const lines: string[] = [];
+
+  for (const root of todos) {
+    if (root.status === "completed" && (!visible || visible.has(root.id))) {
+      lines.push(
+        `- [x] ${root.id} ${root.content}${root.note ? `: ${root.note}` : ""}`,
+      );
+    }
+    for (const child of root.children ?? []) {
+      if (child.status === "completed" && (!visible || visible.has(child.id))) {
+        lines.push(
+          `- [x] ${child.id} ${child.content}${child.note ? `: ${child.note}` : ""}`,
+        );
+      }
+    }
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "No completed tasks yet.";
+}
+
 export interface ReadOperationResult {
   /** Scope-narrowed list, also what the tool returns as structured output. */
   todos: TodoRootItem[];
   /** Rows to print for `children`/`item`; absent means "print everything". */
   visibleIds?: readonly number[];
-  /** Rendered tree, ready to hand back as tool content. */
+  /** Rendered tree or summary, ready to hand back as tool content. */
   content: string;
 }
 
@@ -86,9 +117,14 @@ export function runReadOperation(
   input: TodoReadInput,
 ): ReadOperationResult {
   const scoped = selectReadScope(todos, input);
-  const content = formatReadOutput(scoped.todos, {
-    visibleIds: scoped.visibleIds,
-  });
+  const content =
+    input.format === "summary"
+      ? formatCompactSummary(scoped.todos, {
+          visibleIds: scoped.visibleIds,
+        })
+      : formatReadOutput(scoped.todos, {
+          visibleIds: scoped.visibleIds,
+        });
 
   return scoped.visibleIds === undefined
     ? { todos: scoped.todos, content }

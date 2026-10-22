@@ -14,14 +14,17 @@ import {
   flattenLeaves,
   isAnyTodoActive,
 } from "./todos/hint";
-import { runReadOperation } from "./todos/read";
+import { formatCompactSummary, formatReadOutput, runReadOperation } from "./todos/read";
 import { TodoTree } from "./todos/todo-tree";
 import { updateTodoById } from "./todos/update";
+
+export { formatCompactSummary, formatReadOutput };
 
 const STATUS_MARK = {
   completed: "✓\uFE0E",
   in_progress: "▶\uFE0E",
   error: "✗\uFE0E",
+  cancelled: "⊘\uFE0E",
 } as const;
 
 /**
@@ -66,6 +69,9 @@ export function summarizeTransitions(
       lines.push(
         `${STATUS_MARK.error} ${label}${leaf.note ? ` — ${leaf.note}` : ""}`,
       );
+    } else if (leaf.status === "cancelled") {
+      changedIds.add(leaf.id);
+      lines.push(`${STATUS_MARK.cancelled} ${label}`);
     }
   });
 
@@ -124,25 +130,36 @@ export function formatUpdateOutput(
   todos: readonly TodoRootItem[],
   before: readonly TodoRootItem[] = [],
 ): string {
-  const stats = new TodoTree(todos).calculateStats();
-  const progress = `Todos (${stats.completedSubTasks}/${stats.totalSubTasks}).`;
-  return formatWriteOutput(todos, before).replace(
-    /^Todos \(\d+\/\d+\) updated\./,
-    progress.slice(0, -1),
-  );
+  return formatWriteOutput(todos, before);
 }
 
 export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
   await ctx.tool.transform((tools) => {
     tools.add({
       name: "manage_todo_list",
-      description:
-        "Manage the todo list for multi-step tasks. Use non-empty 'write' only to initialize; use 'write' with [] to clear; use 'update' for existing items. " +
-        "Rules enforced: one root at a time in order — root 2 cannot start while root 1 is still open; only a root in 'error' may be fixed early, and only inside that root. " +
-        "Only one task/subtask may be 'in_progress'; progress never moves backward and finished items are locked. " +
-        "Mark items completed right after they are verified. " +
-        "Keep working through open items without asking permission to continue. " +
-        "Call 'read' first if unsure of current state, as tasks can be cleared by user via UI.",
+       description: [
+         "Manage a todo list for multi-step work. Use it when a task has 3+ steps.",
+         "",
+         "Statuses: pending, in_progress, completed, cancelled, error.",
+         "",
+         "Operations:",
+         "- read: show the list. Call this first if unsure of the current state.",
+         "- write: replace the whole list. todos: [] clears it.",
+         "- update: change status of 1 todo, or 2 in order (max 2).",
+         "",
+         "Update examples:",
+         '{ operation: "update", updates: { id: "1.1", status: "completed" } }',
+         '{ operation: "update", updates: [{ id: "1.1", status: "completed" }, { id: "1.2", status: "in_progress" }] }',
+         "",
+         "Rules:",
+         "- Roots run in order. Only the first unfinished root can change.",
+         "- Only one item can be in_progress at a time.",
+         "- completed and cancelled are final.",
+         "- An error root can be fixed early, only inside that root.",
+         "- Mark done right after finishing each item.",
+         "",
+         "Keep working through open todos without asking permission.",
+       ].join("\n"),
       input: TodoInputToolSchema,
       output: TodoOutputToolSchema,
       options: { codemode: false },
@@ -166,7 +183,7 @@ export async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
         }
 
         if (parsed.data.operation === "update") {
-          const updateInput = parsed.data;
+          const updateInput = parsed.data.updates;
           let before: TodoRootItem[] = [];
           const todos = await updateTodos(toolContext.sessionID, (current) => {
             before = current;

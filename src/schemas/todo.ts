@@ -150,9 +150,18 @@ const readOperation = z
   .literal("read")
   .describe("'read' to inspect current todos.");
 
+const formatOption = z
+  .enum(["tree", "summary"])
+  .default("tree")
+  .optional()
+  .describe(
+    "Output format: 'tree' for standard tree view, 'summary' for compact completed summary.",
+  );
+
 export const TodoReadAllSchema = z
   .object({
     operation: readOperation,
+    format: formatOption,
     scope: z
       .literal("all")
       .default("all")
@@ -163,6 +172,7 @@ export const TodoReadAllSchema = z
 export const TodoReadItemSchema = z
   .object({
     operation: readOperation,
+    format: formatOption,
     scope: z.literal("item").describe("Return only the targeted item."),
     target: TodoTargetIdSchema.describe(
       "Root or child todo id, e.g. 1 or 1.1.",
@@ -173,6 +183,7 @@ export const TodoReadItemSchema = z
 export const TodoReadChildrenSchema = z
   .object({
     operation: readOperation,
+    format: formatOption,
     scope: z
       .literal("children")
       .describe(
@@ -187,6 +198,7 @@ export const TodoReadChildrenSchema = z
 export const TodoReadRootSchema = z
   .object({
     operation: readOperation,
+    format: formatOption,
     scope: z
       .literal("root")
       .describe("Return exactly one root together with all of its subtasks."),
@@ -216,14 +228,50 @@ export const TodoWriteOperationSchema = z
   })
   .strict();
 
-export const TodoUpdateOperationSchema = z
+/**
+ * One todo to change. Shared by the single object and the array form of
+ * `updates`, so a field can never exist in one shape but not the other.
+ */
+export const TodoUpdateItemSchema = z
   .object({
-    operation: z.literal("update").describe("'update' one root or child todo."),
     id: TodoTargetIdSchema,
-    status: TodoStatusSchema.describe("New status for the target todo."),
+    status: TodoStatusSchema.describe("New status for this todo."),
     content: z.string().optional(),
     priority: PrioritySchema.nullable().optional(),
     note: z.string().nullable().optional(),
+    cancel_remaining: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, automatically cancels any remaining pending subtasks in the target root when marking this task error or cancelled.",
+      ),
+  })
+  .strict();
+
+/**
+ * `updates` accepts one object or up to two, applied in array order.
+ *
+ * Two is the maximum because the order rules only ever allow one legitimate
+ * pair: finish the item that is running, then start the next one. A third
+ * entry could only be an attempt to skip a step, which the order validation
+ * would reject anyway — refusing it here keeps that failure at the schema
+ * boundary instead of inside a transaction.
+ *
+ * The object form is normalised to a one-element array so the handler has a
+ * single shape to work with.
+ */
+export const TodoUpdateOperationSchema = z
+  .object({
+    operation: z
+      .literal("update")
+      .describe("'update' one or two todos, applied in order."),
+    updates: z.preprocess(
+      (value) => (typeof value === "string" ? safeParseJson(value) : value),
+      z.union([
+        TodoUpdateItemSchema,
+        z.array(TodoUpdateItemSchema).min(1).max(2),
+      ]).transform((value) => (Array.isArray(value) ? value : [value])),
+    ),
   })
   .strict();
 
@@ -249,6 +297,9 @@ export type TodoReadInput = z.infer<typeof TodoReadOperationSchema>;
 export type TodoReadScope = TodoReadInput["scope"];
 
 export type TodoWriteOperationInput = z.infer<typeof TodoWriteOperationSchema>;
+export type TodoUpdateItem = z.infer<typeof TodoUpdateItemSchema>;
+/** Always an array, even when the caller sent a single object. */
+export type TodoUpdateBatch = readonly TodoUpdateItem[];
 export type TodoUpdateInput = z.infer<typeof TodoUpdateOperationSchema>;
 export type TodoInputTool = z.infer<typeof TodoInputToolSchema>;
 export type TodoOutputTool = z.infer<typeof TodoOutputToolSchema>;
