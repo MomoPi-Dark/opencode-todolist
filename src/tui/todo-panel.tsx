@@ -62,6 +62,9 @@ export interface TodoListRow {
   textColor: ColorInput;
   depth: number;
   status: TodoStatus;
+  elapsed?: string;
+  isExpandable?: boolean;
+  isRootCollapsed?: boolean;
 }
 
 /** A renderable line: either a task row or its on-demand error row. */
@@ -78,6 +81,14 @@ export interface FollowScrollInput {
 
 const isOpen = (status: TodoStatus) =>
   status !== "completed" && status !== "cancelled";
+
+export function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
 
 function ContinuePrompt(summary: TodoDisplaySummary | null) {
   const open = summary?.items.filter((item) => isOpen(item.status)) ?? [];
@@ -195,6 +206,7 @@ export function TodoList(props: {
   scrollbarColor?: ColorInput;
   activeIcon?: () => string;
   onToggleRow?: (id: number) => void;
+  onToggleRoot?: (id: number) => void;
   ref?: (el: ScrollBoxRenderable) => void;
 }) {
   const rowId = (id: number) => `todo-row-${id}`;
@@ -271,9 +283,14 @@ export function TodoList(props: {
                 flexShrink={0}
                 width={RowWidth(entry.row)}
                 onMouseDown={(e) => {
-                  if (e.button === 0 && entry.row.status === "error") {
-                    e.stopPropagation?.();
-                    props.onToggleRow?.(entry.row.id);
+                  if (e.button === 0) {
+                    if (entry.row.status === "error") {
+                      e.stopPropagation?.();
+                      props.onToggleRow?.(entry.row.id);
+                    } else if (entry.row.isExpandable) {
+                      e.stopPropagation?.();
+                      props.onToggleRoot?.(entry.row.id);
+                    }
                   }
                 }}
               >
@@ -295,10 +312,21 @@ export function TodoList(props: {
                   >
                     {entry.row.content}
                   </span>
+                  <Show when={entry.row.elapsed}>
+                    <span style={{ fg: entry.row.textColor }}>
+                      {" "}({entry.row.elapsed})
+                    </span>
+                  </Show>
                   <Show when={entry.row.status === "error"}>
                     <span style={{ fg: props.scrollbarColor }}>
                       {" "}
                       {isExpanded(entry.row.id) ? "⌄" : "›"}
+                    </span>
+                  </Show>
+                  <Show when={entry.row.isExpandable}>
+                    <span style={{ fg: props.scrollbarColor }}>
+                      {" "}
+                      {entry.row.isRootCollapsed ? "›" : "⌄"}
                     </span>
                   </Show>
                 </text>
@@ -437,6 +465,15 @@ export function TodoProgress(props: {
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
   const [expandedIds, setExpandedIds] = createSignal<number[]>([]);
+  const [manualRootToggles, setManualRootToggles] = createSignal<number[]>([]);
+  const [elapsedTick, setElapsedTick] = createSignal(0);
+  const taskStartTimes = new Map<number, number>();
+
+  createEffect(() => {
+    if (!hasInProgress() || !isRunning()) return;
+    const interval = setInterval(() => setElapsedTick((t) => t + 1), 1000);
+    onCleanup(() => clearInterval(interval));
+  });
 
   const clearHover = createHover();
   const continueHover = createHover();
@@ -555,20 +592,98 @@ export function TodoProgress(props: {
    */
   const rows = createMemo<TodoListRow[]>(() => {
     if (isCollapsed()) return [];
-    return (summary()?.items ?? []).map((item) => ({
-      id: item.id,
-      content: item.content,
-      icon: item.icon,
-      iconColor: getStatusColor(item.status),
-      textColor: getTextColor(item.status),
-      depth: item.depth,
-      status: item.status,
-    }));
+    elapsedTick(); // subscribe to 1s elapsed timer
+    const items = summary()?.items ?? [];
+    const activeIds = new Set<number>();
+    for (const item of items) {
+      if (item.status === "in_progress") {
+        activeIds.add(item.id);
+        if (!taskStartTimes.has(item.id)) {
+          taskStartTimes.set(item.id, Date.now());
+        }
+      }
+    }
+    for (const id of taskStartTimes.keys()) {
+      if (!activeIds.has(id)) {
+        taskStartTimes.delete(id);
+      }
+    }
+
+    const rootHasChildren = new Map<number, boolean>();
+    let curRoot: number | undefined;
+    for (const item of items) {
+      if (item.depth === 0) {
+        curRoot = item.id;
+        rootHasChildren.set(item.id, false);
+      } else if (curRoot !== undefined) {
+        rootHasChildren.set(curRoot, true);
+      }
+    }
+
+    const result: TodoListRow[] = [];
+    let skipChildrenRootId: number | undefined;
+
+    for (const item of items) {
+      if (item.depth === 0) {
+        const hasChildren = rootHasChildren.get(item.id) ?? false;
+        const defaultCollapsed = item.status === "completed" && hasChildren;
+        const isToggled = manualRootToggles().includes(item.id);
+        const collapsed = isToggled ? !defaultCollapsed : defaultCollapsed;
+
+        skipChildrenRootId = collapsed && hasChildren ? item.id : undefined;
+
+        const elapsed =
+          item.status === "in_progress" && taskStartTimes.has(item.id)
+            ? formatElapsed(Date.now() - taskStartTimes.get(item.id)!)
+            : undefined;
+
+        result.push({
+          id: item.id,
+          content: item.content,
+          icon: item.icon,
+          iconColor: getStatusColor(item.status),
+          textColor: getTextColor(item.status),
+          depth: 0,
+          status: item.status,
+          elapsed,
+          isExpandable: hasChildren,
+          isRootCollapsed: collapsed,
+        });
+      } else {
+        if (skipChildrenRootId !== undefined) {
+          continue;
+        }
+
+        const elapsed =
+          item.status === "in_progress" && taskStartTimes.has(item.id)
+            ? formatElapsed(Date.now() - taskStartTimes.get(item.id)!)
+            : undefined;
+
+        result.push({
+          id: item.id,
+          content: item.content,
+          icon: item.icon,
+          iconColor: getStatusColor(item.status),
+          textColor: getTextColor(item.status),
+          depth: item.depth,
+          status: item.status,
+          elapsed,
+        });
+      }
+    }
+    return result;
   });
 
   // Actions
   const toggleRowNote = (id: number) =>
     setExpandedIds((current) =>
+      current.includes(id)
+        ? current.filter((entry) => entry !== id)
+        : [...current, id],
+    );
+
+  const toggleRoot = (id: number) =>
+    setManualRootToggles((current) =>
       current.includes(id)
         ? current.filter((entry) => entry !== id)
         : [...current, id],
@@ -745,6 +860,7 @@ export function TodoProgress(props: {
                 expandedIds={expandedIds()}
                 activeIcon={activeIcon}
                 onToggleRow={toggleRowNote}
+                onToggleRoot={toggleRoot}
               />
             </box>
           </Show>
