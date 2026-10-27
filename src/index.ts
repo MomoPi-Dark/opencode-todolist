@@ -27,26 +27,8 @@ async function registerTodoTools(ctx: Plugin.Context): Promise<void> {
   await ctx.tool.transform((tools) => {
     tools.add({
       name: "manage_todo_list",
-      description: [
-        "Manage a todo list for multi-step work. Use it when a task has 3+ steps.",
-        "",
-        "Statuses: pending, in_progress, completed, cancelled, error.",
-        "",
-        "Operations:",
-        "- read: show the list. Call this first if unsure of the current state.",
-        "- create: initialize or replace a finished list.",
-        "- update: patch 1 to 10 todos in order.",
-        "- clear: clear a finished list with confirm: true.",
-        "",
-        "Rules:",
-        "- Roots run in order. Only the first unfinished root can change.",
-        "- Only one root and one child chain can be in_progress.",
-        "- completed and cancelled are final.",
-        "- An error root can be fixed early, only inside that root.",
-        "- Mark done right after finishing each item.",
-        "",
-        "Keep working through open todos without asking permission.",
-      ].join("\n"),
+      description:
+        "Track multi-step work (3+ steps) in a hierarchical todo list. Operations: read, create, update, clear. Supports status, priority, notes, and subtasks; read first when unsure of the current state.",
       input: TodoInputToolSchema,
       output: TodoOutputToolSchema,
       options: { codemode: false },
