@@ -1,5 +1,4 @@
 import z from "zod";
-import { safeParseJson } from "../../utils/parseJson";
 import { contentField, noteField } from "./fields";
 import { TodoTargetIdSchema } from "./id";
 import { isCancellingStatus, PrioritySchema, TodoStatusSchema } from "./status";
@@ -8,8 +7,7 @@ import { isCancellingStatus, PrioritySchema, TodoStatusSchema } from "./status";
 export const MAX_UPDATES = 10;
 
 /**
- * One todo to change. Shared by the single object and the array form of
- * `updates`, so a field can never exist in one shape but not the other.
+ * One todo to change inside the required `updates` array.
  * Every field except `id` is optional, but at least one must be present.
  */
 export const TodoUpdateItemSchema = z
@@ -32,7 +30,7 @@ export const TodoUpdateItemSchema = z
             .boolean()
             .optional()
             .describe(
-                "If true, cancels the remaining pending subtasks of the target root. Requires status error or cancelled.",
+                "If true, cancels the remaining pending subtasks of the target root. Requires status cancelled.",
             ),
     })
     .strict()
@@ -54,19 +52,14 @@ export const TodoUpdateItemSchema = z
             ctx.addIssue({
                 code: "custom",
                 path: ["cancel_remaining"],
-                message: "cancel_remaining requires status to be error or cancelled",
+                message: "cancel_remaining requires status cancelled",
             });
         }
     });
 
-const toUpdateArray = (value: unknown): unknown => {
-    const parsed = typeof value === "string" ? safeParseJson(value) : value;
-    return Array.isArray(parsed) || parsed === undefined ? parsed : [parsed];
-};
-
 /**
- * `updates` accepts one object or an array of up to MAX_UPDATES, applied in
- * array order inside one transaction.
+ * `updates` requires an array of 1–MAX_UPDATES items, applied in array order
+ * inside one transaction.
  *
  * What the schema enforces (cheap, state-free rules, so the model learns about
  * them from the validation error):
@@ -78,9 +71,6 @@ const toUpdateArray = (value: unknown): unknown => {
  *   - every step is valid against the state left by the previous step;
  *   - the whole batch is atomic: if one step fails, nothing is applied.
  *
- * A single object is wrapped into a one-element array during preprocessing,
- * so the handler always sees an array and the schema has no transform
- * (JSON Schema generation works in both input and output mode).
  */
 export const TodoUpdateOperationSchema = z
     .object({
@@ -88,17 +78,13 @@ export const TodoUpdateOperationSchema = z
             .literal("update")
             .describe(`'update' up to ${MAX_UPDATES} todos, applied in order.`),
         updates: z
-            .preprocess(
-                toUpdateArray,
-                z
-                    .array(TodoUpdateItemSchema)
-                    .min(1)
-                    .max(MAX_UPDATES, {
-                        error: `At most ${MAX_UPDATES} updates per call; send the rest in a follow-up call.`,
-                    }),
-            )
+            .array(TodoUpdateItemSchema)
+            .min(1)
+            .max(MAX_UPDATES, {
+                error: `At most ${MAX_UPDATES} updates per call; send the rest in a follow-up call.`,
+            })
             .describe(
-                `One update object, or an array of at most ${MAX_UPDATES}, applied in order. Each id may appear once.`,
+                `An array of at most ${MAX_UPDATES} updates, applied in order. Each id may appear once.`,
             ),
     })
     .strict()
@@ -128,7 +114,7 @@ export const TodoUpdateOperationSchema = z
     });
 
 export type TodoUpdateItem = z.infer<typeof TodoUpdateItemSchema>;
-/** Always an array, even when the caller sent a single object. */
+/** The validated update batch is always an array. */
 export type TodoUpdateBatch = readonly TodoUpdateItem[];
 export type TodoUpdateInput = z.infer<typeof TodoUpdateOperationSchema>;
 

@@ -9,10 +9,9 @@ const parse = (updates: unknown) =>
 
 describe("TodoUpdateOperationSchema", () => {
     describe("shape", () => {
-        test("wraps a single object into an array", () => {
+        test("rejects a single object", () => {
             const r = parse({ id: 1, status: "completed" });
-            expect(r.success).toBe(true);
-            if (r.success) expect(r.data.updates).toHaveLength(1);
+            expect(r.success).toBe(false);
         });
 
         test("keeps an array as an array", () => {
@@ -24,13 +23,10 @@ describe("TodoUpdateOperationSchema", () => {
             if (r.success) expect(r.data.updates).toHaveLength(2);
         });
 
-        test("accepts a stringified object and a stringified array", () => {
-            expect(
-                parse(JSON.stringify({ id: 1, status: "completed" })).success,
-            ).toBe(true);
+        test("accepts an array and rejects stringified updates", () => {
             expect(
                 parse(JSON.stringify([{ id: 1, status: "completed" }])).success,
-            ).toBe(true);
+            ).toBe(false);
         });
 
         test("rejects missing, empty or non-object updates", () => {
@@ -45,17 +41,17 @@ describe("TodoUpdateOperationSchema", () => {
         test("rejects the wrong operation and unknown fields", () => {
             expect(
                 TodoUpdateOperationSchema.safeParse({
-                    operation: "write",
-                    updates: { id: 1, status: "completed" },
+                operation: "write",
+                updates: [{ id: 1, status: "completed" }],
                 }).success,
             ).toBe(false);
-            expect(parse({ id: 1, status: "completed", extra: true }).success).toBe(
+            expect(parse([{ id: 1, status: "completed", extra: true }]).success).toBe(
                 false,
             );
             expect(
                 TodoUpdateOperationSchema.safeParse({
                     operation: "update",
-                    updates: { id: 1, status: "completed" },
+                    updates: [{ id: 1, status: "completed" }],
                     extra: 1,
                 }).success,
             ).toBe(false);
@@ -64,85 +60,85 @@ describe("TodoUpdateOperationSchema", () => {
 
     describe("ids", () => {
         test("accepts root and child ids, as numbers or numeric strings", () => {
-            expect(parse({ id: 1, status: "completed" }).success).toBe(true);
-            expect(parse({ id: 1.1, status: "completed" }).success).toBe(true);
-            expect(parse({ id: "1", status: "completed" }).success).toBe(true);
-            expect(parse({ id: "1.1", status: "completed" }).success).toBe(true);
+            expect(parse([{ id: 1, status: "completed" }]).success).toBe(true);
+            expect(parse([{ id: 1.1, status: "completed" }]).success).toBe(true);
+            expect(parse([{ id: "1", status: "completed" }]).success).toBe(true);
+            expect(parse([{ id: "1.1", status: "completed" }]).success).toBe(true);
         });
 
         test("coerces string ids to numbers", () => {
-            const r = parse({ id: "1.1", status: "completed" });
+        const r = parse([{ id: "1.1", status: "completed" }]);
             expect(r.success && r.data.updates[0]?.id).toBe(1.1);
         });
 
         test.each(["abc", "1e0", "", 0, -1, 1.12, null, undefined])(
             "rejects invalid id %p",
             (id) => {
-                expect(parse({ id, status: "completed" }).success).toBe(false);
+            expect(parse([{ id, status: "completed" }]).success).toBe(false);
             },
         );
     });
 
     describe("fields", () => {
         test("rejects an update that changes nothing", () => {
-            expect(parse({ id: 1 }).success).toBe(false);
+        expect(parse([{ id: 1 }]).success).toBe(false);
         });
 
         test("status can be omitted when another field changes", () => {
-            expect(parse({ id: 1, content: "New text" }).success).toBe(true);
-            expect(parse({ id: 1, priority: "high" }).success).toBe(true);
-            expect(parse({ id: 1, note: "x" }).success).toBe(true);
+            expect(parse([{ id: 1, content: "New text" }]).success).toBe(true);
+            expect(parse([{ id: 1, priority: "high" }]).success).toBe(true);
+            expect(parse([{ id: 1, note: "x" }]).success).toBe(true);
         });
 
         test("null counts as a change (removes priority or note)", () => {
-            expect(parse({ id: 1, note: null }).success).toBe(true);
-            expect(parse({ id: 1, priority: null }).success).toBe(true);
+            expect(parse([{ id: 1, note: null }]).success).toBe(true);
+            expect(parse([{ id: 1, priority: null }]).success).toBe(true);
         });
 
         test("rejects invalid status and priority", () => {
-            expect(parse({ id: 1, status: "done" }).success).toBe(false);
-            expect(parse({ id: 1, priority: "urgent" }).success).toBe(false);
+            expect(parse([{ id: 1, status: "done" }]).success).toBe(false);
+            expect(parse([{ id: 1, priority: "urgent" }]).success).toBe(false);
         });
 
         test("rejects empty or oversized content", () => {
-            expect(parse({ id: 1, content: "" }).success).toBe(false);
-            expect(parse({ id: 1, content: "   " }).success).toBe(false);
-            expect(parse({ id: 1, content: "x".repeat(501) }).success).toBe(false);
-            expect(parse({ id: 1, content: "x".repeat(500) }).success).toBe(true);
+            expect(parse([{ id: 1, content: "" }]).success).toBe(false);
+            expect(parse([{ id: 1, content: "   " }]).success).toBe(false);
+            expect(parse([{ id: 1, content: "x".repeat(501) }]).success).toBe(false);
+            expect(parse([{ id: 1, content: "x".repeat(500) }]).success).toBe(true);
         });
 
         test("rejects oversized note", () => {
-            expect(parse({ id: 1, note: "x".repeat(1001) }).success).toBe(false);
-            expect(parse({ id: 1, note: "x".repeat(1000) }).success).toBe(true);
+            expect(parse([{ id: 1, note: "x".repeat(1001) }]).success).toBe(false);
+            expect(parse([{ id: 1, note: "x".repeat(1000) }]).success).toBe(true);
         });
     });
 
     describe("cancel_remaining", () => {
         test("accepted with status cancelled", () => {
             expect(
-                parse({ id: 1, status: "cancelled", cancel_remaining: true }).success,
+                parse([{ id: 1, status: "cancelled", cancel_remaining: true }]).success,
             ).toBe(true);
         });
 
         test.each(["completed", "pending", "in_progress", "error"])(
             "rejected with status %s",
             (status) => {
-                expect(parse({ id: 1, status, cancel_remaining: true }).success).toBe(
+                expect(parse([{ id: 1, status, cancel_remaining: true }]).success).toBe(
                     false,
                 );
             },
         );
 
         test("rejected without a status", () => {
-            expect(parse({ id: 1, cancel_remaining: true }).success).toBe(false);
-            expect(parse({ id: 1, note: "x", cancel_remaining: true }).success).toBe(
+            expect(parse([{ id: 1, cancel_remaining: true }]).success).toBe(false);
+            expect(parse([{ id: 1, note: "x", cancel_remaining: true }]).success).toBe(
                 false,
             );
         });
 
         test("false is always fine", () => {
             expect(
-                parse({ id: 1, status: "completed", cancel_remaining: false }).success,
+                parse([{ id: 1, status: "completed", cancel_remaining: false }]).success,
             ).toBe(true);
         });
     });

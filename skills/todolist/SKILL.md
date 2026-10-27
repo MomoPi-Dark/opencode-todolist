@@ -58,8 +58,9 @@ Each root has `id`, `content`, and `status`; it may also have `priority`,
 - `priority`, when present, is `high`, `medium`, or `low`.
 - `status` is `pending`, `in_progress`, `completed`, `cancelled`, or `error`.
 
-`create` is rejected while the current list still has open work. Finish or
-cancel the current list before creating a replacement.
+`create` is rejected while the current list contains any `pending`,
+`in_progress`, or `error` todo. Finish or cancel the current list before
+creating a replacement.
 
 ### `read`
 
@@ -87,7 +88,7 @@ Supported scopes:
 
 ### `update`
 
-Update one item or an array of **1–10** updates. An array is applied in order
+Update an array of **1–10** updates, even when changing one item. The array is applied in order
 and each id may appear only once:
 
 ```json

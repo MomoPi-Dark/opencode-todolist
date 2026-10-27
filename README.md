@@ -129,9 +129,9 @@ only the displayed rows are narrowed.
 
 ### Update
 
-`updates` may be one object or an array of 1–10 update objects. Arrays are
-applied in order inside one transaction. Each ID may appear only once, and at
-most one update in a call may set `in_progress`.
+`updates` must be an array of 1–10 update objects, even when changing only one
+todo. Arrays are applied in order inside one transaction. Each ID may appear
+only once, and at most one update in a call may set `in_progress`.
 
 Every update must change at least one of `status`, `content`, `priority`, or
 `note`. Omit a field to keep it unchanged. Pass `null` for `priority` or

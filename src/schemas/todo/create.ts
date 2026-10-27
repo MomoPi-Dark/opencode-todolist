@@ -5,7 +5,7 @@ import { TodoListSchema } from "./item";
 const createOperation = z
     .literal("create")
     .describe(
-        "'create' a new todo list. Rejected while any todo is still pending or in progress.",
+        "'create' a new todo list. Rejected while any todo is still pending, in progress, or error.",
     );
 
 const todos = z
