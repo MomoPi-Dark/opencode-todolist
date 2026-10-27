@@ -54,7 +54,7 @@ describe("cost of tool arguments (sent on every request)", () => {
         // Was ~1633 tok when this suite was written. The number is mostly
         // structural: four union branches, each repeating `additionalProperties`,
         // the status enum and its description.
-        budget("TodoInputToolSchema", schemaText(TodoInputToolSchema), 1700);
+        budget("TodoInputToolSchema", schemaText(TodoInputToolSchema), 1800);
     });
 
     test("no single operation exceeds 600 tokens", () => {
@@ -66,7 +66,7 @@ describe("cost of tool arguments (sent on every request)", () => {
         for (const branch of branches) {
             const text = JSON.stringify(branch);
             // `create` is the widest: it inlines the whole item shape twice.
-            budget("one union branch", text, 620);
+        budget("one union branch", text, 680);
         }
     });
 

@@ -121,13 +121,21 @@ describe("TodoReadOperationSchema", () => {
         );
     });
 
-    describe("invalid input", () => {
-        test("rejects removed scope children", () => {
+    describe("scope: children", () => {
+        test("accepts a child id", () => {
             expect(
-                parse({ operation: "read", scope: "children", target: 1.1 }).success,
-            ).toBe(false);
+                parse({ operation: "read", scope: "children", target: 2.1 }).success,
+            ).toBe(true);
         });
 
+        test("requires a child-shaped target", () => {
+            expect(
+                parse({ operation: "read", scope: "children", target: 2 }).success,
+            ).toBe(false);
+        });
+    });
+
+    describe("invalid input", () => {
         test("rejects unknown scope", () => {
             expect(parse({ operation: "read", scope: "everything" }).success).toBe(
                 false,

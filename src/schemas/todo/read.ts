@@ -1,5 +1,5 @@
 import z from "zod";
-import { RootIdSchema, TodoTargetIdSchema } from "./id";
+import { ChildIdSchema, RootIdSchema, TodoTargetIdSchema } from "./id";
 
 const readOperation = z
     .literal("read")
@@ -32,6 +32,15 @@ export const TodoReadItemSchema = z
     })
     .strict();
 
+export const TodoReadChildrenSchema = z
+    .object({
+        operation: readOperation,
+        format: formatOption,
+        scope: z.literal("children"),
+        target: ChildIdSchema,
+    })
+    .strict();
+
 export const TodoReadRootSchema = z
     .object({
         operation: readOperation,
@@ -45,7 +54,7 @@ export const TodoReadRootSchema = z
 
 // `read` is a discriminated union on `scope`, so an impossible combination
 // cannot be written at all: `target` exists only alongside `scope: "item"`
-// and `"root"`, neither of which is valid without one. `.strict()` on every
+// `"root"`, and `"children"`, neither of which is valid without one. `.strict()` on every
 // member is what enforces that: without it `{ scope: "all", target: 1 }`
 // would parse and silently ignore `target`.
 //
@@ -56,13 +65,14 @@ export const TodoReadRootSchema = z
 // the input and fills in `scope: "all"`.
 export const TodoReadOperationSchema = z.discriminatedUnion(
     "scope",
-    [TodoReadAllSchema, TodoReadItemSchema, TodoReadRootSchema],
+    [TodoReadAllSchema, TodoReadItemSchema, TodoReadRootSchema, TodoReadChildrenSchema],
     { unionFallback: true },
 );
 
 export type TodoReadAllInput = z.infer<typeof TodoReadAllSchema>;
 export type TodoReadItemInput = z.infer<typeof TodoReadItemSchema>;
 export type TodoReadRootInput = z.infer<typeof TodoReadRootSchema>;
+export type TodoReadChildrenInput = z.infer<typeof TodoReadChildrenSchema>;
 export type TodoReadInput = z.infer<typeof TodoReadOperationSchema>;
 export type TodoReadScope = TodoReadInput["scope"];
 

@@ -47,11 +47,13 @@ Use the smallest read that answers the question:
 ```json
 { "operation": "read", "scope": "all", "format": "tree" }
 { "operation": "read", "scope": "root", "target": 1, "format": "tree" }
+{ "operation": "read", "scope": "children", "target": 2.1, "format": "tree" }
 { "operation": "read", "scope": "item", "target": 1.1, "format": "summary" }
 ```
 
-`all` reads the complete list, `root` reads one root and its children, and
-`item` reads one root or child row. `summary` shows completed rows only.
+`all` reads the complete list, `root` reads one root and its children,
+`children` reads a child with its root context, and `item` reads one root or
+child row. `summary` shows completed rows only.
 
 ## Status Handling
 

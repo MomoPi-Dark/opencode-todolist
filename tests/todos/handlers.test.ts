@@ -41,7 +41,7 @@ describe("handleRead", () => {
             .toBe("- [x] 1 Task 1: done");
     });
 
-    test("supports root and item scopes", () => {
+    test("supports root, item, and children scopes", () => {
         const todos = [
             root(1, {
                 status: "in_progress",
@@ -54,6 +54,11 @@ describe("handleRead", () => {
         const item = success(handleRead(todos, read({ scope: "item", target: 1.2 })));
         expect(item.visibleIds).toEqual([1, 1.2]);
         expect(item.content).toContain("(1/2)");
+        const children = success(handleRead(todos, read({ scope: "children", target: 1.2 })));
+        expect(children.visibleIds).toEqual([1, 1.2]);
+        expect(children.content).toContain("1. Task 1");
+        expect(children.content).toContain("1.2 Sub 1.2");
+        expect(children.content).not.toContain("1.1 Sub 1.1");
     });
 
     test("refuses an unknown target", () => {

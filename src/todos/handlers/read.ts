@@ -32,6 +32,7 @@ export interface ReadToolResult {
 
 /**
  * `read`: render the stored list, optionally narrowed to one root or one row.
+ * `children` shows the selected child with its root as context.
  *
  * Read never refuses because the list is "malformed" — showing the rows is more
  * useful than hiding them — but the structural warning goes first so the model
@@ -52,7 +53,7 @@ export function handleRead(
     let scoped: TodoRootItem[] = [...todos];
     let visibleIds: readonly number[] | undefined;
 
-    if (input.scope === "root" || input.scope === "item") {
+    if (input.scope === "root" || input.scope === "item" || input.scope === "children") {
         const found = resolveTarget(todos, input.target);
         if (!found) {
             return {
@@ -77,6 +78,15 @@ export function handleRead(
                     // the root line comes along as context. Its progress label is the
                     // real one, because the subtasks are still in `scoped`.
                     [found.root.id, found.item.id];
+        } else if (input.scope === "children") {
+            if (found.depth === 0) {
+                return {
+                    ok: false,
+                    todos: [...todos],
+                    content: `No child todo ${input.target}.`,
+                };
+            }
+            visibleIds = [found.root.id, found.item.id];
         }
     }
 

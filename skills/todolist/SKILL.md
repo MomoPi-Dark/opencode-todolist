@@ -78,11 +78,13 @@ Supported scopes:
 ```json
 { "operation": "read", "scope": "all", "format": "tree" }
 { "operation": "read", "scope": "root", "target": 1, "format": "tree" }
+{ "operation": "read", "scope": "children", "target": 2.1, "format": "tree" }
 { "operation": "read", "scope": "item", "target": 1.1, "format": "summary" }
 ```
 
 - `all` returns the whole list and has no `target`.
 - `root` requires a root id and returns that root with all its children.
+- `children` requires a child id and returns that child with its root shown above it.
 - `item` requires a root or child id and narrows the displayed row.
 - An unknown target is an error; it does not silently return the full list.
 
