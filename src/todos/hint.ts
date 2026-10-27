@@ -1,5 +1,6 @@
-import type { TodoStatus } from "../schemas/status";
-import type { TodoChildren, TodoRootItem } from "../schemas/todo";
+import { Plugin } from "@opencode/plugin";
+import type { TodoChildren, TodoRootItem } from "../schemas/todo/item";
+import type { TodoStatus } from "../schemas/todo/status";
 import {
   readTodoData,
   takeHintRevision,
@@ -7,8 +8,18 @@ import {
 } from "../storage/todo-store";
 import { TodoTree } from "./todo-tree";
 
-export const DEFAULT_STALE_MS = 30 * 60 * 1000; // 30 minutes (prompt fallback)
-export const CONTEXT_STALE_MS = 6 * 60 * 60 * 1000; // 6 hours
+interface HintPart {
+  type: "text";
+  text: string;
+}
+
+interface SystemContext {
+  sessionID: string;
+  system: HintPart[];
+}
+
+export const DEFAULT_STALE_MS = 30 * 60 * 1000;
+export const CONTEXT_STALE_MS = 6 * 60 * 60 * 1000;
 const UPCOMING_LIMIT = 3;
 
 export const TODO_HINT =
@@ -225,5 +236,75 @@ export function buildTodoHint(
     );
   } catch {
     return undefined;
+  }
+}
+
+const HINT_MARKER = "<todo_state>";
+const DEBUG = process.env.TODO_HINT_DEBUG === "1";
+
+const log = (...args: unknown[]): void => {
+  if (DEBUG) console.error("[todo]", ...args);
+};
+
+const hasHint = (system: readonly HintPart[]): boolean =>
+  system.some(
+    (part) => part.type === "text" && part.text.includes(HINT_MARKER),
+  );
+
+export async function registerTodoPromptHook(
+  ctx: Plugin.Context,
+): Promise<void> {
+  const session = ctx.session;
+  if (typeof session?.hook !== "function") return;
+
+  // Primary path: inject into the system prompt. The state is rebuilt every
+  // turn and never lands in the conversation history.
+  const inject = async (sc: SystemContext): Promise<void> => {
+    try {
+      if (!Array.isArray(sc.system) || hasHint(sc.system)) return;
+      const hint = buildTodoHint(sc.sessionID);
+      if (!hint) return;
+      sc.system.push({ type: "text", text: hint });
+      log("hint injected", sc.sessionID);
+    } catch (error) {
+      log("hint injection failed", error);
+    }
+  };
+
+  const names = ["context", "compaction", "generate"] as const;
+  const results = await Promise.allSettled([
+    session.hook("context", inject),
+    session.hook("compaction", inject),
+    session.hook("generate", inject),
+  ]);
+
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      log(`hook "${names[i]}" unavailable`, result.reason);
+    }
+  });
+
+  // Any hook that registered is enough. Falling back while one is active
+  // would inject the hint twice.
+  if (results.some((r) => r.status === "fulfilled")) return;
+
+  // Fallback: append to the prompt text. This is a compromise, because the hint
+  // becomes part of the stored message. consumeTodoHint returns it once per
+  // revision so it does not pile up every turn.
+  log("no system hooks available; using prompt fallback");
+  try {
+    await session.hook("prompt", async (sessionPrompt) => {
+      try {
+        if (!sessionPrompt.prompt?.text?.trim()) return;
+        const hint = consumeTodoHint(sessionPrompt.sessionID);
+        if (hint) {
+          sessionPrompt.prompt.text = `${sessionPrompt.prompt.text}\n\n${hint}`;
+        }
+      } catch (error) {
+        log("prompt hint failed", error);
+      }
+    });
+  } catch (error) {
+    log("prompt hook unavailable", error);
   }
 }

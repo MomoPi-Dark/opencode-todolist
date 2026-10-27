@@ -1,13 +1,13 @@
 import {
+  foreignKey,
   index,
   integer,
   primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
-  foreignKey,
 } from "drizzle-orm/sqlite-core";
-import type { Priority, TodoStatus } from "../schemas/status";
+import type { Priority, TodoStatus } from "../schemas/todo/status";
 
 /**
  * Relational storage for todos.

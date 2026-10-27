@@ -46,7 +46,7 @@
     "compile": "bun run build && node scripts/build-jsx.mjs",
     "build:jsx": "node scripts/build-jsx.mjs",
     "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/build-jsx.mjs\"",
-    "test": "bun test/icon.test.ts && bun test/todo.test.ts && bun test/storage.sqlite.test.ts && bun test/skill.test.ts && bun test/skill.folder.test.ts && bun test/output.budget.test.ts",
+    "test": "bun test tests/**/*.test.ts",
     "test:render": "bun --conditions=browser test/glyph.render.test.tsx",
     "test:todo": "bun test/todo.test.ts",
     "typecheck": "tsc --noEmit",

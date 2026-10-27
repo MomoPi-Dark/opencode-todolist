@@ -1,5 +1,5 @@
-import type { TodoStatus } from "../schemas/status";
-import type { TodoRootItem } from "../schemas/todo";
+import { TodoRootItem } from "../schemas/todo/item";
+import type { TodoStatus } from "../schemas/todo/status";
 import { TodoTree } from "./todo-tree";
 
 export interface TodoDisplayItem {
@@ -8,7 +8,6 @@ export interface TodoDisplayItem {
   icon: string;
   status: TodoStatus;
   depth: number;
-  /** Technical context/evidence; the TUI reveals it on demand (click). */
   note?: string;
 }
 
@@ -35,16 +34,26 @@ export function getStatusIcon(status: TodoStatus): string {
   }
 }
 
-export function hasOpenTodos(items: TodoDisplayItem[]): boolean {
-  return items.some((item) => TodoTree.isOpenStatus(item.status));
+export function hasOpenTodos(todos: readonly TodoRootItem[]): boolean {
+    return TodoTree.hasOpen(todos);
 }
+
+export const openTodosError = (action: "create" | "clear"): Error =>
+  new Error(
+    [
+      `Cannot ${action}: the current list still has open todos (pending, in_progress or error).`,
+      "",
+      'Use "update" to set every open todo to completed or cancelled first.',
+      'Use "cancel_remaining" with status cancelled to drop the rest of a root in one step.',
+    ].join("\n"),
+  );
 
 export function getTodoDisplaySummary(
   todos: TodoRootItem[],
 ): TodoDisplaySummary | null {
   if (!todos || todos.length === 0) return null;
 
-  const stats = new TodoTree(todos).calculateStats();
+  const stats = TodoTree.calculateStats(todos);
   const completed = stats.completedSubTasks;
   const total = stats.totalSubTasks;
   const header = `Todos (${completed}/${total})`;

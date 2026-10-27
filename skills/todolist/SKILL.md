@@ -1,6 +1,6 @@
 ---
 name: todolist
-description: Tracks multi-step work via the manage_todo_list tool. Use when a request needs 3+ steps or touches 2+ files (feature, bugfix, refactor, migration, executing a plan). Skip for trivial single-change tasks.
+description: Tracks multi-step work with the manage_todo_list tool. Use when a request has 3+ steps or touches 2+ files; skip trivial single-change questions.
 license: MIT
 compatibility: opencode
 metadata:
@@ -8,244 +8,144 @@ metadata:
   audience: developers
   workflow: task-tracking
   tool: manage_todo_list
-  version: "1.3"
+  version: "1.4"
 ---
 
 # Todolist Management
 
-Plan and track multi-step work with `manage_todo_list`. The todo list is the single source of truth for progress. A TUI widget above the composer shows it in real time, so keep items short and readable.
+Use `manage_todo_list` as the source of truth for multi-step work. Follow the
+tool contract below exactly; do not invent operation names or fields.
 
 ## When to Use
 
-Create a todo list (without asking permission) when the task has **3+ distinct steps** or **touches 2+ files**.
+Use it when work has **3+ distinct steps** or touches **2+ files**. Skip it for
+a trivial rename, one-line fix, single edit plus a check, or a question that
+needs no change.
 
-Skip it for trivial work: a rename, a one-line fix, a single edit plus a lint run, or a question that needs no changes.
+## Contract
 
-## Rules
+The valid `operation` values are `create`, `read`, `update`, and `clear`.
 
-1. **Plan first.** Call `manage_todo_list` with `operation: "write"` before the first `write`/`edit`/`shell` call on a qualifying task.
-2. **One active root, in order.** Roots run one at a time, top to bottom. Root `2` must not start while root `1` is still `pending`/`in_progress`/`error`; finish or cancel root `1` first. Inside one root, exactly one subtask may be `in_progress`, and its parent root is `in_progress` too. Progress never moves backward: `in_progress` never returns to `pending`, and a `completed`/`cancelled` item is locked.
-3. **Error exception.** Only a root in `error` (or holding an errored child) may be worked on early, and only inside that root. Every other root still waits its turn. Fix it with a forward transition (`in_progress`, `completed`, or `cancelled`); `error` never becomes `pending`.
-4. **Keep going (default).** While any item is `pending`, `in_progress` or `error`, continue with the next step without asking "should I continue?". Do not end your turn or write a final summary until every item is `completed`, `cancelled` or `error`-and-escalated. Stop only when you are blocked, need user input, or the user clearly changes topic or tells you to stop or pause.
-5. **Real work between transitions.** Never move several items from `pending` to `completed` in one update without actual execution in between.
-6. **Evidence in `note`.** When completing an item, record what was touched or verified (e.g. `created: src/auth.ts`, `tests passing`). Do not mark `completed` until verified.
-7. **Short `content`, detailed `note`.** `content` stays one line (hard limit 80 chars) for the compact TUI widget. File paths, acceptance criteria, and verification steps go in `note` (hard limit 200 chars). Notes render under the item as `↳ note: ...`.
-8. **Granularity.** One step = one verifiable outcome. Hard limits: at most 9 children per root task, with child IDs strictly `<root_id>.<n>` where `n` is from 1 to 9 (numeric e.g. `1.1` to `1.9`). Subtasks are one level deep (children cannot have their own children).
-9. **Priority is optional.** Set `priority` (`high` | `medium` | `low`) only when it helps, e.g. `high` for a blocking or critical-path step. Omit it otherwise.
+### `create`
 
-## Status Rules
+Create or replace a complete list with at least one root:
 
-| Situation                                                                  | Result                                             |
-| -------------------------------------------------------------------------- | -------------------------------------------------- |
-| All children `completed`                                                   | Parent becomes `completed` automatically           |
-| Child `in_progress`, parent `pending`                                      | Parent must be `in_progress` (hierarchy invariant) |
-| Parent `completed` or `cancelled` while a child is `pending`/`in_progress` | Invalid: finish or cancel the children first       |
-| Parent `completed` while a child is `error`                                | Invalid: resolve the errored child first           |
-| Two `in_progress` items outside one parent/child chain                     | Invalid: only one active chain                     |
-| Remaining children are only `completed` + `cancelled`                      | Set the parent to `completed` yourself             |
-| A step failed                                                              | Set it to `error` (kept open) with the reason in `note` |
+```json
+{
+  "operation": "create",
+  "todos": [
+    {
+      "id": 1,
+      "content": "Implement the feature",
+      "status": "in_progress",
+      "children": [
+        { "id": 1.1, "content": "Write the handler", "status": "pending" }
+      ]
+    },
+    { "id": 2, "content": "Verify the feature", "status": "pending" }
+  ]
+}
+```
 
-If a non-empty `write` is rejected because the session already has todos, use
-`update` for the target item instead. Use `write` with `todos: []` only to clear.
+Each root has `id`, `content`, and `status`; it may also have `priority`,
+`note`, and `children`. A child has the same fields except `children`.
 
-## Tool Interface
+- There may be at most **50 roots** and **9 children per root**.
+- Root ids are positive integers (`1`, `2`, ...).
+- Child ids use `<root_id>.<n>` with `n` from `1` to `9` (`1.1`, `1.2`, ...).
+- `content` is a trimmed string of 1–500 characters.
+- `note` is an optional string of at most 1000 characters.
+- `priority`, when present, is `high`, `medium`, or `low`.
+- `status` is `pending`, `in_progress`, `completed`, `cancelled`, or `error`.
 
-`manage_todo_list` supports three operations. A non-empty `write` initializes a
-session, `write` with `todos: []` clears it, and `update` changes one existing
-root or child without resending the full list.
+`create` is rejected while the current list still has open work. Finish or
+cancel the current list before creating a replacement.
 
-### Item fields
+### `read`
 
-| Field      | Required    | Notes                                                                                                                                                                                                                                            |
-| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`       | Required | Task identifier (`number`, e.g. `1`, `2`). Subtasks use format `<root_id>.<n>` (`number`, e.g. `1.1`, `1.2`).                                                                                                   |
-| `content`  | Required | Summary shown in the TUI. Hard limit 80 chars.                                                                                                   |
-| `status`   | Required | `pending` \| `in_progress` \| `completed` \| `cancelled` \| `error`. Exactly one task/subtask may be `in_progress`.                                  |
-| `note`     | Optional    | Technical context or evidence.                                                                                                                                                                                                                   |
-| `priority` | Optional    | `high` \| `medium` \| `low`.                                                                                                                                                                                                                     |
-| `children` | Optional    | Subtasks with the same fields (except `children`).                                                                                                                                                                                               |
-
-### Read
+Read defaults to the complete tree in `tree` format:
 
 ```json
 { "operation": "read" }
 ```
 
-Returns the current todos as a progress tree:
+Supported formats are `tree` and `summary`. `summary` lists completed rows
+only; when none are completed it returns `No completed tasks yet.`.
 
-```
-[x] 1. Design architecture
-[~] 2. Implement backend (1/2)
-    ↳ note: Ensure strict input validation
-    [x] 2.1 Database schema
-    [~] 2.2 API endpoints
-        ↳ note: Return 401 when unauthenticated
-[ ] 3. Write tests
-```
-
-Use `format: "summary"` for a compact bulleted list of completed items and notes (ideal for context handoff or subagent prompts):
+Supported scopes:
 
 ```json
-{ "operation": "read", "format": "summary" }
+{ "operation": "read", "scope": "all", "format": "tree" }
+{ "operation": "read", "scope": "root", "target": 1, "format": "tree" }
+{ "operation": "read", "scope": "item", "target": 1.1, "format": "summary" }
 ```
 
-Markers: `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]` cancelled, `[!]` error.
+- `all` returns the whole list and has no `target`.
+- `root` requires a root id and returns that root with all its children.
+- `item` requires a root or child id and narrows the displayed row.
+- An unknown target is an error; it does not silently return the full list.
 
-### Update one or two items
+### `update`
 
-Use `updates` with one object for a single change, or an array with at most two
-objects for sequential `prev` then `new` changes. Each object uses a numeric
-root ID (`1`) or child ID (`1.1`) and sends only changed fields. `status` is
-required:
-
-```json
-{
-  "operation": "update",
-  "updates": { "id": 1.1, "status": "completed", "note": "tests passing" }
-}
-```
-
-To finish the current item and start the next one in the same transaction:
+Update one item or an array of **1–10** updates. An array is applied in order
+and each id may appear only once:
 
 ```json
 {
   "operation": "update",
   "updates": [
-    { "id": 1.1, "status": "completed" },
+    { "id": 1.1, "status": "completed", "note": "tests passing" },
     { "id": 1.2, "status": "in_progress" }
   ]
 }
 ```
 
-To abort a task and cancel all remaining pending subtasks in that root at once:
+Every update must change at least one of `status`, `content`, `priority`, or
+`note`. `status` itself is optional when another field is being patched.
+`priority: null` and `note: null` remove those fields. `cancel_remaining: true`
+requires `status: "cancelled"` and cancels remaining pending children under
+the target root.
+
+Only one update in a call may set `status: "in_progress"`. Use array order to
+finish one item and then start the next; send a follow-up call when another
+`in_progress` status is needed. A failed batch is not partially applied.
+
+The list validator also requires:
+
+- no more than one top-level root is `in_progress`;
+- no more than one child under a root is `in_progress`;
+- an `in_progress` child has an `in_progress` parent;
+- roots are handled in order; a later root cannot be completed, cancelled, or
+  started while an earlier root is still open.
+
+### `clear`
+
+`clear` is destructive. Ask the user for confirmation before calling it. Do
+not send the `clear` tool call in the same response that asks for confirmation;
+wait for a later user reply that explicitly agrees. After confirmation, send:
 
 ```json
-{
-  "operation": "update",
-  "updates": { "id": 1.2, "status": "error", "cancel_remaining": true, "note": "failed" }
-}
+{ "operation": "clear", "confirm": true }
 ```
 
-Array order is execution order. The array accepts one or two objects only;
-the second object is validated against the state left by the first. If either
-object fails, the whole update is rolled back.
+The operation is rejected while any root or child is open. `confirm: true` is
+the tool-level confirmation, not a substitute for the user's explicit reply.
 
-Order rules enforced by the tool:
+## Working Rules
 
-1. Only the first unfinished root may change. Root `2` is rejected while root `1` is still open.
-2. Inside that root, work one subtask at a time; starting a second `in_progress` subtask is rejected.
-3. Progress only moves forward. `in_progress` cannot return to `pending`, and `completed`/`cancelled` items are locked (`error` may still be fixed).
-4. A root in `error` may be fixed early, but only that root and its own children.
-5. Starting a new `in_progress` while another root is `in_progress` is rejected: finish or cancel the running root first.
+1. Read first when the current list is unknown or may have changed.
+2. If there is no existing list and the work qualifies, initialize it with
+   `create`; do not use an unsupported operation.
+3. Keep one active root/child chain. A child may be active only under its
+   active parent.
+4. Do real work between status changes. Mark a step `completed` only after
+   verification and record evidence in `note`.
+5. If a step fails, use `status: "error"` with the reason in `note`; resolve
+   or cancel it before declaring the list finished.
+6. Continue through open items without asking permission. Stop only when
+   blocked, waiting for user input, or the user clearly changes topic.
+7. When an operation is refused, read the error and current list, then make a
+   valid `update` instead of forcing an unsupported transition.
 
-If a `write` is rejected, or an `update` is refused, read the error and fix the
-list order instead of forcing the change.
-
-### Error status
-
-Use `error` when a step **failed** and needs a decision. It is an *open*
-status: the list stays active, `error` is never counted as progress, and the
-step is reported to the user as the next thing to resolve. Put the reason in
-`note` — the TUI shows it when the row is clicked and it is appended to the
-  `✗︎ n/t: <task> — <reason>` transition line. Then either fix it (back
-to `in_progress`/`completed`) or mark it `cancelled` if it is no longer needed.
-A parent cannot be `completed` while any child is `error`.
-
-### Write (initialization)
-
-Non-empty `write` is allowed only when the session has no todos yet. It cannot
-replace an existing list; use `update` for existing items.
-
-```json
-{
-  "operation": "write",
-  "todos": [
-    {
-      "id": 1,
-      "content": "Add auth endpoint",
-      "status": "in_progress",
-      "priority": "high",
-      "note": "src/auth.ts, must return 401 on bad token",
-      "children": [
-        {
-          "id": 1.1,
-          "content": "Write handler",
-          "status": "completed",
-          "note": "created: src/auth.ts"
-        },
-        { "id": 1.2, "content": "Add validation", "status": "in_progress" }
-      ]
-    },
-    { "id": 2, "content": "Update docs", "status": "pending" }
-  ]
-}
-```
-
-### Clear
-
-Pass an empty list to clear the current list:
-
-```json
-{ "operation": "write", "todos": [] }
-```
-
-Never reuse old ids for a new goal without an explicit `status`: an omitted status is inherited from the old item with that id, so a new item could start as `completed`.
-
-Use `read` first when unsure of the current state. For existing items, use
-`update` with the target `id` and required `status`; `content`, `note`, and
-`priority` are optional patches.
-
-## Workflow
-
-1. Receive a qualifying request.
-2. `write` the plan: first item `in_progress`, the rest `pending`.
-3. Execute the active step.
-4. `write` the update: mark it `completed` with evidence in `note` (or `error` with the reason in `note` when it failed), set the next item `in_progress`.
-5. Repeat until all items are `completed` or `cancelled`.
-
-After a `write`, the tool returns a short status such as `Todos (2/4) updated. Next: 2.2 "API endpoints". Continue immediately.` (or `All todos finished.` when nothing is open). If the result also contains transition lines (e.g. `✓  Completed (2/3): <task>`, `▶  Starting (3/3): <task>`, `✗  Error (3/3): <task> — <reason>`) or a `Next: <id> "<content>"` hint, print the transition lines to chat **verbatim** and continue with the named step immediately. If the result has none, do not invent them. Add no other per-step commentary. Post a short chat message at the start (the plan) and at the end (a summary), or when a step is blocked or cancelled.
-
-## Context Recovery
-
-The TUI widget provides a `↻ Continue` button that dispatches a detailed resumption prompt to the active session when work remains open and the session is idle. The generated prompt presents open tasks with natural language status descriptions (`currently being worked on`, `not started`, `needs fixing`) rather than raw internal enums, and details current progress alongside any task notes.
-
-**Main form (`<todo_state>` + `<todo_rules>`)**, injected on every request while any item is open:
-
-```
-<todo_state>
-Progress 2/5 completed.
-Now: 2.2 API endpoints (Return 401 when unauthenticated)
-Next: 3 Write tests; 4 Update docs
-</todo_state>
-<todo_rules>Open todos remain. Continue the in_progress item now. ...</todo_rules>
-```
-
-- `Progress` counts **leaves**: a child when a parent has children, otherwise the parent itself.
-- `Now` is the `in_progress` leaf with its `note`. If no step is running but one is `error`, `Now` names it and its reason. `Next` lists up to 3 upcoming `pending` leaves.
-- If `Now` says nothing is `in_progress`, `write` the first `pending` item as `in_progress` and continue.
-
-**Fallback form (`<todo_hint>`)**, used only when the host has no `context` hook. It is injected once per list change and says: _"Active todos exist. If continuing previous work, call manage_todo_list [read] first. Ignore if the user is discussing something else."_
-
-How to act on either:
-
-- **Default: continue.** Treat open todos as work you must keep executing, without waiting for the user to say "continue". `read` for the full list when `<todo_state>` is not enough, or when you only got `<todo_hint>`.
-- Resume from the `in_progress` item, then a failed (`error`) one, then the first `pending` one. If the user provides a new goal, new multi-step request, or indicates creating/starting a new task list, immediately replace and initialize the new todo list via `manage_todo_list [write]`.
-- Ignore the hint only if the user clearly moved to an unrelated topic, or asked to stop or pause. Do not drop the list: leave it as is and answer the user.
-- Expiry: the main form stops after about 6 hours without a `write`, the fallback after about 30 minutes. Nothing is injected when all items are `completed` or `cancelled`. If you resume old work with no hint, `read` anyway.
-- If `read` returns an empty list, the user may have cleared it with the `✕` button in the widget. Do not restore the old plan; create a new list only if the current request still qualifies.
-
-## Anti-Patterns
-
-- Editing files on a qualifying task without an initialized todo list.
-- Starting root 2 while root 1 is still open, or changing anything outside the current root (except fixing an errored root).
-- Moving progress backward: `in_progress` back to `pending`, or reopening a `completed`/`cancelled` item.
-- Marking items `completed` without execution or evidence.
-- Treating a failed (`error`) step as done instead of fixing or cancelling it, or leaving it without a reason in `note`.
-- Ending the turn with open items and no blocker, or pausing to ask permission to continue.
-- Ignoring `<todo_state>` / `<todo_rules>` while items are still open.
-- Having more than one `in_progress` root, or more than one `in_progress` subtask in a root.
-- Using `write` to modify an existing list instead of using `update`.
-- Reusing old ids for a new goal without setting `status`.
-- Putting long paths or acceptance criteria in `content` instead of `note`.
-- Inventing or renumbering transition lines the tool did not return.
-- Creating a todo list for trivial single-change tasks.
+Keep `content` short enough for the TUI. Put paths, acceptance criteria, and
+verification evidence in `note`.

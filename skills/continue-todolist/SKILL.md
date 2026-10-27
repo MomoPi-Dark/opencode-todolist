@@ -1,6 +1,6 @@
 ---
 name: continue-todolist
-description: Resumes an existing todo list created with manage_todo_list. Use when the user says continue/lanjutkan, returns to old work, resumes an interrupted task, or asks where you left off.
+description: Resumes an existing todo list created with manage_todo_list. Use when the user says continue or lanjutkan, returns to old work, resumes an interruption, or asks what remains.
 license: MIT
 compatibility: opencode
 metadata:
@@ -12,83 +12,68 @@ metadata:
 
 # Continue Todolist
 
-The user wants to **resume work that is already tracked**. You do **not** need a
-new plan: the stored list is the source of truth. Read it, find the current
-step, and keep going.
-
-## When to Use
-
-- The user says "continue", "lanjutkan", "next", "keep going", "where were we?".
-- You returned to a task after a break, a topic switch, or a new session.
-- The TUI widget provides a `↻ Continue` button that populates the session prompt with a progress summary and remaining tasks labeled in natural language (e.g. `currently being worked on`, `not started`, `needs fixing`).
-- A `<todo_state>` / `<todo_hint>` block told you that open todos exist.
-- The user asks about progress, blockers, or what is left.
-
-Create a **new** list instead (see the `todolist` skill) only when the user
-gives a genuinely new goal. If the goal changed, update the existing list
-rather than starting a parallel one.
+Resume the stored list; do not reconstruct it from memory and do not create a
+parallel list for the same goal.
 
 ## Procedure
 
-1. **Read first — never guess.** Call `manage_todo_list` with
-   `{ "operation": "read" }`. Never reconstruct the list from memory: another
-   session, a `write`, or the user's `✕` button may have changed it.
-2. **Empty list?** If `read` returns `No todos recorded.`, there is nothing to
-   resume. Do not restore an old plan; create a new list only if the current
-   request still qualifies (3+ steps or 2+ files).
-3. **Pick the current step**, in this priority order:
-   1. the `in_progress` leaf (the step that was running),
-   2. a leaf in `error` (a step that failed and still needs a decision),
-   3. the first `pending` leaf in order.
-4. **Re-anchor the list if needed.** If nothing is `in_progress` but steps are
-   still open, `write` the chosen step as `in_progress` first. Keep the single
-   active chain rule: at most one item `in_progress`.
-5. **State your position in one short line**, then continue immediately — do
-   not ask "should I continue?". Example:
-   `Resuming (2/4): 2.2 "API endpoints" — 1 done, 1 failed, 1 pending.`
-6. **Work the step for real**, then `write` the update (`completed` with
-   evidence in `note`, next item `in_progress`) and print the transition lines
-   verbatim.
-7. **Repeat** until every item is `completed` or `cancelled`.
+1. Call:
 
-## Handling the Statuses You May Find
+   ```json
+   { "operation": "read" }
+   ```
 
-- `completed` — already done; do not redo it, do not re-report it as completed.
-- `cancelled` — intentionally skipped; leave it unless the user revives it.
-- `error` — a failed step. Read its `note` (the reason), then either fix it
-  (set `in_progress` → `completed`) or mark it `cancelled` if it no longer
-  matters. Never silently treat it as done; it keeps the list open.
-- `in_progress` — the resume point. Verify the work still applies before
-  continuing, especially if the previous session ended mid-edit.
+2. If the result is empty, do not restore an old plan. Use `create` only when
+   the current request is a new qualifying goal.
+3. Choose the next leaf in this order:
+   1. the current `in_progress` leaf;
+   2. a leaf with `error` that needs fixing;
+   3. the first `pending` leaf in list order.
+4. If open work exists but nothing is `in_progress`, use `update` to start the
+   chosen root. If it has children, start the parent before its child so the
+   active-chain invariant remains valid.
+5. State the resume position in one short line, then continue immediately.
+6. Do the work for real. Use `update` to record `completed` with evidence in
+   `note`, or `error` with the failure reason. Start the next item in the same
+   call only when the update batch remains valid; `updates` accepts at most 10
+   items and at most one item may become `in_progress` per call.
+7. Repeat until every work item is `completed` or `cancelled`, or until a
+   blocker requires user input.
 
-## Reconstructing Lost Context
+## Read Scopes
 
-- `read` gives you `content` and `note` for every step. The `note` field is
-  where file paths, acceptance criteria and evidence were recorded — treat it
-  as the handover document.
-- If a step's `note` is empty and its intent is unclear, inspect the
-  repository state (files, git status, tests) **before** marking anything.
-- Any step already `completed` has an evidence trail in its `note`; trust it
-  instead of re-verifying from scratch.
+Use the smallest read that answers the question:
 
-## Rules That Still Apply
+```json
+{ "operation": "read", "scope": "all", "format": "tree" }
+{ "operation": "read", "scope": "root", "target": 1, "format": "tree" }
+{ "operation": "read", "scope": "item", "target": 1.1, "format": "summary" }
+```
 
-- **One active chain.** At most one task/subtask `in_progress`; a subtask
-  `in_progress` requires its parent `in_progress` too.
-- **`write` initializes or clears.** Use a non-empty `write` only for a new
-  session, use `write` with `todos: []` to clear, and use `update` for existing
-  roots/children. `status` is required for `update`; other fields are patches.
-- **Never reuse an old `id` for a new goal without an explicit `status`** — the
-  stored status would be inherited.
-- **Evidence in `note`** when completing; do not mark `completed` unverified.
-- **Do not create a duplicate list.** Continuing means updating the existing
-  one, not starting a second plan for the same goal.
+`all` reads the complete list, `root` reads one root and its children, and
+`item` reads one root or child row. `summary` shows completed rows only.
 
-## Anti-Patterns
+## Status Handling
 
-- Guessing the list from memory instead of calling `read` first.
-- Starting a new list when the user only asked to continue the existing one.
-- Re-emitting `✓ Completed` lines for steps that were already completed.
-- Leaving an `error` step unresolved while continuing past it.
-- Asking permission to continue when todos are simply open.
-- Ending the turn with open items and no blocker or question for the user.
+- `completed` and `cancelled` are closed; do not redo them.
+- `pending` is not started; start it with `update` when it is next.
+- `in_progress` is the resume point.
+- `error` needs a decision: fix it with `update`, or cancel it deliberately.
+- Keep at most one active root and one active child under that root; an active
+  child requires an active parent.
+- Roots run in order. Do not complete, cancel, or start a later root while an
+  earlier root is open.
+
+## New Lists and Clearing
+
+- `create` initializes or replaces a complete list only when the current list
+  has no open work.
+- `clear` is destructive: ask the user for explicit confirmation first, wait
+  for a later affirmative reply, then send `{ "operation": "clear", "confirm": true }`.
+  Never combine the confirmation question and the `clear` call in one response.
+  It also requires no open root or child.
+- `update` changes existing rows; it is the operation for continuing work.
+
+Never use an operation or field not listed in the tool schema. Never mark work
+complete without evidence in `note`, and never end while open work remains
+unless blocked or waiting for the user.

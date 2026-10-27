@@ -10,8 +10,8 @@ import {
   Show,
 } from "solid-js";
 import { Glyph } from "../icons/glyph";
-import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/glyphs";
-import { StatusLabel, type TodoStatus } from "../schemas/status";
+import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/icons";
+import { STATUS_LABEL, type TodoStatus } from "../schemas/todo/status";
 import {
   getDataVersion,
   getTodosDirectory,
@@ -90,7 +90,7 @@ export function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function ContinuePrompt(summary: TodoDisplaySummary | null) {
+export function ContinuePrompt(summary: TodoDisplaySummary | null) {
   const open = summary?.items.filter((item) => isOpen(item.status)) ?? [];
   const shown = open.slice(0, CONTINUE_PROMPT_MAX_ITEMS);
   const hidden = open.length - shown.length;
@@ -111,7 +111,7 @@ function ContinuePrompt(summary: TodoDisplaySummary | null) {
         ? ` — ${shorten(item.note, CONTINUE_PROMPT_MAX_NOTE)}`
         : "";
       lines.push(
-        `${item.depth ? "  " : ""}- ${item.id} (${StatusLabel[item.status]}) ${shorten(item.content, CONTINUE_PROMPT_MAX_CONTENT)}${note}`,
+        `${item.depth ? "  " : ""}- ${item.id} (${STATUS_LABEL[item.status]}) ${shorten(item.content, CONTINUE_PROMPT_MAX_CONTENT)}${note}`,
       );
     }
     if (hidden > 0) lines.push(`... (${hidden} more open item(s))`);
@@ -264,8 +264,6 @@ export function TodoList(props: {
         }
       : {};
 
-  const isExpanded = (id: number) => (props.expandedIds ?? []).includes(id);
-
   return (
     <scrollbox
       ref={attach}
@@ -320,7 +318,8 @@ export function TodoList(props: {
                   </span>
                   <Show when={entry.row.elapsed}>
                     <span style={{ fg: entry.row.textColor }}>
-                      {" "}({entry.row.elapsed})
+                      {" "}
+                      ({entry.row.elapsed})
                     </span>
                   </Show>
                 </text>
@@ -634,9 +633,7 @@ export function TodoProgress(props: {
         skipChildrenRootId = collapsed && hasChildren ? item.id : undefined;
 
         const elapsed =
-          item.status === "completed"
-            ? taskDurations.get(item.id)
-            : undefined;
+          item.status === "completed" ? taskDurations.get(item.id) : undefined;
 
         result.push({
           id: item.id,
@@ -656,9 +653,7 @@ export function TodoProgress(props: {
         }
 
         const elapsed =
-          item.status === "completed"
-            ? taskDurations.get(item.id)
-            : undefined;
+          item.status === "completed" ? taskDurations.get(item.id) : undefined;
 
         result.push({
           id: item.id,

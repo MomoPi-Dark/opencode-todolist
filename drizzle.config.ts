@@ -1,6 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 /**
  * Drizzle Kit configuration.
@@ -16,15 +16,18 @@ import { join } from "node:path";
  * instead of a stray default. `OPENCODE_TODOS_DIR` wins, exactly as it does at
  * runtime, so a dev can point both at a scratch directory.
  */
+const xdgDataHome = process.env.XDG_DATA_HOME;
+const base =
+  process.env.OPENCODE_TODOS_DIR ??
+  (xdgDataHome && isAbsolute(xdgDataHome)
+    ? join(xdgDataHome, "opencode", "todolist")
+    : join(homedir(), ".local", "share", "opencode", "todolist"));
+
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/storage/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: join(
-      process.env.OPENCODE_TODOS_DIR ??
-      join(homedir(), ".opencode", "sessions"),
-      "todos.db",
-    ),
+    url: join(base, "todos.db"),
   },
 });

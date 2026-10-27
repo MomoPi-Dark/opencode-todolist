@@ -1,7 +1,7 @@
+import { asc, eq } from "drizzle-orm";
 import { readFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { asc, eq } from "drizzle-orm";
-import { TodoListSchema, type TodoRootItem } from "../schemas/todo";
+import { TodoListSchema, type TodoRootItem } from "../schemas/todo/item";
 import type { TodoDatabaseHandle } from "./db";
 import { InvalidTodoDataError } from "./errors";
 import { todoItem, todoSession } from "./schema";
@@ -187,7 +187,9 @@ export function selectTodos(
       content: row.content,
       status: row.status,
       ...(row.priority ? { priority: row.priority } : {}),
-      ...(row.note !== null && row.note !== undefined ? { note: row.note } : {}),
+      ...(row.note !== null && row.note !== undefined
+        ? { note: row.note }
+        : {}),
     };
 
     if (row.parentId === null) {
@@ -323,19 +325,15 @@ export function importLegacyJson(
     return result;
   }
 
-  for (const name of entries) {
-    const sessionDir = join(baseDir, name);
+  const tryImport = (sessionKey: string, sessionDir: string): boolean => {
     let file: string | undefined;
     try {
       file = findLegacyTodoFile(sessionDir);
-      if (!file) continue;
+      if (!file) return false;
     } catch {
-      continue;
+      return false;
     }
 
-    // The hashed folder name is the session key; the legacy plaintext layout
-    // used the raw session id, which is also a valid key.
-    const sessionKey = name;
     try {
       const outcome = importSession(handle, sessionKey, sessionDir);
       if (outcome === "imported") result.imported.push(file);
@@ -346,6 +344,31 @@ export function importLegacyJson(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return true;
+  };
+
+  for (const name of entries) {
+    const sessionDir = join(baseDir, name);
+    if (name === "todos") {
+      let subEntries: string[];
+      try {
+        subEntries = readdirSync(sessionDir);
+      } catch {
+        continue;
+      }
+      let matched = false;
+      for (const sub of subEntries) {
+        if (tryImport(sub, join(sessionDir, sub))) matched = true;
+      }
+      if (!matched) {
+        tryImport("default", baseDir);
+      }
+      continue;
+    }
+
+    // The hashed folder name is the session key; the legacy plaintext layout
+    // used the raw session id, which is also a valid key.
+    tryImport(name, sessionDir);
   }
 
   return result;

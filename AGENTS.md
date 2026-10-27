@@ -90,8 +90,23 @@ tree to an explicit `.js`, and (2) deletes leftover `.jsx` / `.jsx.map` artifact
 
 ## Storage & Concurrency
 
-Todos live in **one SQLite file** at `<home>/.opencode/sessions/todos.db`, opened
+Todos live in **one SQLite file** at `<base>/todos.db`, opened
 through `bun:sqlite` and Drizzle. `src/storage/db.ts` owns the connection.
+
+### Location & permissions
+
+`<base>` resolves in order: `OPENCODE_TODOS_DIR` (must be absolute), else
+`$XDG_DATA_HOME/opencode/todolist`, else `<home>/.local/share/opencode/todolist`.
+Same rule on every OS, including Windows (`%USERPROFILE%\.local\share\opencode\todolist`).
+On non-Windows the directory is `chmod 0700` and the DB `0600`; Windows relies
+on the default user-profile ACLs.
+
+### Legacy location migration
+
+The old DB at `<home>/.opencode/sessions/todos.db` is migrated once on first
+open via `VACUUM INTO`, then renamed to `todos.db.migrated`. Never deleted.
+Legacy per-session JSON files are still imported from the OLD base dir
+`<home>/.opencode/sessions`.
 
 ### The two-process problem
 
@@ -166,7 +181,8 @@ An older checkout has flat `0000_*.sql` plus `meta/`. Convert it once with
 `drizzle.config.ts` carries `dbCredentials.url` even though `generate` does not
 need it: `migrate`, `studio`, and `check` refuse to run without it. The path
 mirrors the store's resolution (`OPENCODE_TODOS_DIR` first, then
-`~/.opencode/sessions`) so tooling inspects the real database.
+`$XDG_DATA_HOME/opencode/todolist`, then `~/.local/share/opencode/todolist`) so
+tooling inspects the real database.
 
 ### Clearing a list
 

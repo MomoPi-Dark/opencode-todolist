@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { join, posix, win32 } from "node:path";
 import { eq } from "drizzle-orm";
-import type { TodoRootItem } from "../schemas/todo";
+import { createHash } from "node:crypto";
+import { homedir, tmpdir } from "node:os";
+import { posix, win32 } from "node:path";
+import type { TodoRootItem } from "../schemas/todo/item";
 import { TodoTree } from "../todos/todo-tree";
 import {
+  adoptLegacyDatabase,
   getDatabase,
   getDataVersion as readDataVersion,
   resetDatabaseForTests,
@@ -16,6 +16,7 @@ import {
   mutateSessionTodos,
   readRevision,
   selectTodos,
+  type MigrationResult,
 } from "./migrate-json";
 import { todoSession } from "./schema";
 
@@ -62,10 +63,11 @@ const FILE_NAME = "todos.db";
 export class TodoStore {
   private static readonly SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
-  private handle: TodoDatabaseHandle | undefined;
-  private importedBaseDir: string | undefined;
+  private readonly importedBaseDirs = new Set<string>();
+  private legacyDatabaseChecked = false;
+  private migration: MigrationResult = { imported: [], skipped: [], failed: [] };
 
-  constructor(private readonly ctx: PlatformContext = {}) {}
+  constructor(private readonly ctx: PlatformContext = {}) { }
 
   // Static helpers
 
@@ -148,53 +150,152 @@ export class TodoStore {
   /**
    * Base directory holding the database and the legacy session folders.
    *
-   * Priority:
-   *   1. `OPENCODE_TODOS_DIR` — explicit override for tests and tooling.
-   *   2. `<home>/.opencode/sessions`
+   * Priority (same on every OS, Windows included):
+   *   1. `OPENCODE_TODOS_DIR` — explicit override; must be absolute.
+   *   2. `$XDG_DATA_HOME/opencode/todolist` — ignored unless absolute (XDG spec).
+   *   3. `<home>/.local/share/opencode/todolist`
    */
   public resolveTodosBaseDir(): string {
-    if (this.env.OPENCODE_TODOS_DIR) return this.env.OPENCODE_TODOS_DIR;
-    return this.joinForPlatform(this.resolveHomeDir(), ".opencode", "sessions");
+    const override = this.env.OPENCODE_TODOS_DIR;
+    if (override) {
+      if (!this.isAbsolute(override)) {
+        throw new Error("OPENCODE_TODOS_DIR must be an absolute path");
+      }
+      return override;
+    }
+    const xdg = this.env.XDG_DATA_HOME;
+    if (xdg && this.isAbsolute(xdg)) {
+      return this.joinForPlatform(xdg, "opencode", "todolist");
+    }
+    return this.joinForPlatform(
+      this.resolveHomeDir(),
+      ".local",
+      "share",
+      "opencode",
+      "todolist",
+    );
+  }
+
+  /** Pre-XDG locations (`.opencode/sessions` and `.opencode/session`). */
+  public resolveLegacyBaseDirs(): string[] {
+    const home = this.resolveHomeDir();
+    return [
+      this.joinForPlatform(home, ".opencode", "sessions"),
+      this.joinForPlatform(home, ".opencode", "session"),
+    ];
+  }
+
+  /** Pre-XDG location. Only read for migration and legacy JSON import. */
+  public resolveLegacyBaseDir(): string {
+    return this.resolveLegacyBaseDirs()[0]!;
+  }
+
+  private isAbsolute(path: string): boolean {
+    return this.platform === "win32"
+      ? win32.isAbsolute(path)
+      : posix.isAbsolute(path);
   }
 
   public getDatabasePath(): string {
     return this.joinForPlatform(this.resolveTodosBaseDir(), FILE_NAME);
   }
 
-  /**
-   * Legacy per-session directory.
-   *
-   * No longer written to. Kept because it is still read once to import old JSON
-   * and because the TUI watches this directory for filesystem changes.
-   */
-  public getSessionDirectory(sessionID: string): string {
-    const baseDir = this.resolveTodosBaseDir();
-    const safeSessionID = TodoStore.normalizeSessionID(sessionID);
-    const hashedDir = join(baseDir, TodoStore.hashSessionID(safeSessionID));
-    const legacyDir = join(baseDir, safeSessionID);
-    if (!existsSync(hashedDir) && existsSync(legacyDir)) return legacyDir;
-    return hashedDir;
-  }
-
-  public getTodosDirectory(sessionID?: string): string {
-    const baseDir = this.resolveTodosBaseDir();
-    if (!sessionID) return baseDir;
-    return join(this.getSessionDirectory(sessionID), "todos");
+  public getTodosDirectory(): string {
+    return this.resolveTodosBaseDir();
   }
 
   // Connection
 
   private database(): TodoDatabaseHandle {
-    if (!this.handle) {
-      this.handle = getDatabase(this.getDatabasePath());
+    // An explicit override means "this directory and nothing else". Without
+    // this guard a test that points the store at a temp dir would migrate — and
+    // rename — the real user's database on first read.
+    const overridden = Boolean(this.env.OPENCODE_TODOS_DIR);
+    const path = this.getDatabasePath();
+
+    // The connection cache lives in `db.ts` alone. Adopting a legacy database
+    // has to happen before that cache opens the file, but only once: the copy
+    // is idempotent and `adoptLegacyDatabase` returns undefined afterwards.
+    if (!overridden && !this.legacyDatabaseChecked) {
+      for (const legacyDir of this.resolveLegacyBaseDirs()) {
+        try {
+          const adopted = adoptLegacyDatabase(legacyDir, path);
+          if (adopted) {
+            this.migration.imported.push(adopted);
+            break;
+          }
+        } catch (error) {
+          const file = this.joinForPlatform(legacyDir, FILE_NAME);
+          if (!this.migration.failed.some((entry) => entry.file === file)) {
+            this.migration.failed.push({
+              file,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          throw error;
+        }
+      }
+      this.legacyDatabaseChecked = true;
     }
-    // Import legacy JSON once per base directory for this process.
-    const baseDir = this.resolveTodosBaseDir();
-    if (this.importedBaseDir !== baseDir) {
-      importLegacyJson(this.handle, baseDir);
-      this.importedBaseDir = baseDir;
+
+    const handle = getDatabase(path);
+
+    // Import legacy JSON once per base directory for this process. The old
+    // per-session JSON lived under `<home>/.opencode/sessions`, so that folder
+    // is still scanned even though new data no longer goes there.
+    const baseDirs = overridden
+      ? [this.resolveTodosBaseDir()]
+      : [this.resolveTodosBaseDir(), ...this.resolveLegacyBaseDirs()];
+    for (const baseDir of new Set(baseDirs)) {
+      if (this.importedBaseDirs.has(baseDir)) continue;
+      const result = importLegacyJson(handle, baseDir);
+      this.migration.imported.push(...result.imported);
+      this.migration.skipped.push(...result.skipped);
+      this.migration.failed.push(...result.failed);
+      this.importedBaseDirs.add(baseDir);
     }
-    return this.handle;
+    return handle;
+  }
+
+  /**
+   * What the upgrade did, for callers that need to tell the user.
+   *
+   * A failed entry means legacy data is still on disk but not yet in the
+   * database — the upgrade never guesses and never deletes, so the source is
+   * still there to fix or import by hand.
+   */
+  public getMigrationReport(): MigrationResult {
+    // Force the lazy upgrade so the report is complete even if nothing has
+    // been read yet.
+    try {
+      this.database();
+    } catch {
+      // Legacy DB adoption failed; its entry is already in `this.migration.failed`.
+    }
+    return {
+      imported: [...this.migration.imported],
+      skipped: [...this.migration.skipped],
+      failed: [...this.migration.failed],
+    };
+  }
+
+  /**
+   * A one-line warning when the upgrade could not finish, undefined otherwise.
+   *
+   * Deliberately short and file-named: the model only needs to know that
+   * something did not arrive and where to look. The full detail stays in
+   * `getMigrationReport()`.
+   */
+  public getMigrationWarning(): string | undefined {
+    const { failed } = this.getMigrationReport();
+    if (failed.length === 0) return undefined;
+
+    const names = failed.map((entry) => entry.file).join(", ");
+    const legacyDir = this.joinForPlatform(
+      this.resolveLegacyBaseDir(),
+      "",
+    ).replace(/[/\\]$/, "");
+    return `Todo upgrade incomplete: ${failed.length} legacy file(s) could not be imported (${names}). They are still in ${legacyDir}; fix or import them by hand. Everything else migrated to ${this.getDatabasePath()}.`;
   }
 
   private key(sessionID: string): string {
@@ -316,7 +417,7 @@ export class TodoStore {
     // allow a lost update when the tool process and the widget process write
     // concurrently: both could read revision N and then both write N+1.
     return mutateSessionTodos(handle, key, (current) => {
-      const result = new TodoTree(update(current)).validateAndNormalize();
+      const result = TodoTree.validateAndNormalize(update(current));
       if (!result.valid) {
         // Throwing inside the transaction rolls it back, so an invalid list
         // never reaches disk and never bumps the revision.
@@ -335,10 +436,11 @@ export class TodoStore {
    * the previous connection keeps servicing the old, unlinked file.
    */
   public resetForTests(): void {
-    this.handle = undefined;
-    this.importedBaseDir = undefined;
-    // The connection itself is cached in `db.ts`, so closing it there is what
-    // actually releases the old file descriptor.
+    this.importedBaseDirs.clear();
+    this.legacyDatabaseChecked = false;
+    this.migration = { imported: [], skipped: [], failed: [] };
+    // The only connection cache lives in `db.ts`, so closing it there is what
+    // releases the file descriptor.
     resetDatabaseForTests();
   }
 }
@@ -347,11 +449,12 @@ export class TodoStore {
 
 const defaultStore = new TodoStore();
 
-export const getTodosDirectory = (sessionID?: string) =>
-  defaultStore.getTodosDirectory(sessionID);
+export const getTodosDirectory = () => defaultStore.getTodosDirectory();
 export const getDatabasePath = () => defaultStore.getDatabasePath();
-export const sessionKey = (sessionID: string) => TodoStore.sessionKey(sessionID);
-export const readTodos = (sessionID: string) => defaultStore.readTodos(sessionID);
+export const sessionKey = (sessionID: string) =>
+  TodoStore.sessionKey(sessionID);
+export const readTodos = (sessionID: string) =>
+  defaultStore.readTodos(sessionID);
 export const readTodosSync = (sessionID: string) =>
   defaultStore.readTodosSync(sessionID);
 export const writeTodos = (sessionID: string, todos: TodoRootItem[]) =>
@@ -364,6 +467,8 @@ export const readTodoData = (sessionID: string) =>
   defaultStore.readTodoData(sessionID);
 export const getRevision = (sessionID: string) =>
   defaultStore.getRevision(sessionID);
+export const getMigrationReport = () => defaultStore.getMigrationReport();
+export const getMigrationWarning = () => defaultStore.getMigrationWarning();
 export const takeHintRevision = (sessionID: string, revision: number) =>
   defaultStore.takeHintRevision(sessionID, revision);
 export const getDataVersion = () => defaultStore.getDataVersion();
