@@ -1,6 +1,6 @@
 {
   "name": "@gamflaz/opencode-todolist",
-  "version": "2.0.0-dev.0",
+  "version": "2.0.0-dev.1",
   "description": "Hierarchical todo list plugin for OpenCode with a real-time TUI widget.",
   "type": "module",
   "files": [
