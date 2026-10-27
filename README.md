@@ -1,18 +1,19 @@
 # OpenCode Todo List Plugin
 
-A local OpenCode plugin for hierarchical todo tracking: a `manage_todo_list` tool
-plus a TUI widget above the composer that shows progress in real time.
+Local OpenCode plugin for hierarchical todo tracking. It provides the
+`manage_todo_list` tool and a real-time TUI widget above the composer.
 
 ## Features
 
-- Hierarchical tasks: any number of root tasks, each with up to 9 subtasks.
-- Numeric IDs only: root `1`, `2`, … and subtasks `1.1`, `1.2`, … (`1.9` max).
-- Atomic batch updates: update 1 item or sequential pairs (finish current + start next) in one call.
-- Cancel remaining on abort: pass `cancel_remaining: true` to auto-cancel pending siblings in the root.
-- Scoped reads & summaries: inspect the whole tree, a branch, single item, or compact markdown summary.
-- Strict forward-only progress with enforced order between root tasks.
-- Real-time TUI widget with active task elapsed timer, auto-collapse for completed roots, scroll, and controls.
-- Bundled skills that teach the agent how to drive the tool.
+- Hierarchical root tasks with optional subtasks.
+- Numeric IDs: roots use `1`, `2`, …; children use `1.1`, `1.2`, …, with one
+  digit after the dot (`1.1`–`1.9`). IDs may also arrive as numeric strings.
+- Four operations: `read`, `create`, `update`, and `clear`.
+- Atomic ordered update batches of up to 10 items.
+- Forward-only status transitions and enforced root order.
+- Scoped tree reads and compact completed-task summaries.
+- Real-time TUI progress display with transition output and next-step hints.
+- Bundled `todolist` and `continue-todolist` skills, registered automatically.
 
 ## Installation
 
@@ -25,173 +26,116 @@ cd ~/.config/opencode/plugins/todolist
 bun install
 ```
 
-`bun install` runs the `prepare` script, which compiles `dist/` from `src/`
-(TypeScript declarations plus Solid-compiled JSX). No extra step is required.
-
-Or add it directly through the OpenCode CLI:
+`bun install` runs `prepare` and builds `dist/` from `src/`. The package also
+ships prebuilt `dist/` files for installation through OpenCode:
 
 ```bash
 opencode plugin add @gamflaz/opencode-todolist
 ```
 
-The npm package ships the prebuilt `dist/`, so no local build runs. OpenCode
-loads local plugins from the plugins directory but does not install their
-dependencies, so `bun install` is required before use.
+For a local clone, install dependencies before use. The plugin entrypoints are
+`index.js` for the server runtime and `tui.js` for the TUI runtime.
 
 ## Tool: `manage_todo_list`
 
-#### Operation fields
+### Operations
 
-| Operation | Required fields        | Optional fields                          |
-| --------- | ---------------------- | ---------------------------------------- |
-| `read`    | `operation`            | `scope`, `target`, `format`              |
-| `write`   | `operation`, `todos`   | None; use `todos: []` to clear           |
-| `update`  | `operation`, `updates` | None                                     |
+| Operation | Required fields | Purpose |
+| --- | --- | --- |
+| `read` | `operation` | Inspect the current list. |
+| `create` | `operation`, `todos` | Create a new non-empty list. |
+| `update` | `operation`, `updates` | Change existing rows. |
+| `clear` | `operation`, `confirm: true` | Remove the completed/cancelled list. |
 
-For `update`, send `null` for `priority` or `note` to remove the existing value.
+All operation objects are strict: unknown fields are rejected.
+
+### IDs and item fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | number or numeric string | Root: positive integer such as `1`; child: `1.1`–`1.9`. |
+| `content` | string | Required one-line task description. |
+| `status` | enum | `pending`, `in_progress`, `completed`, `cancelled`, or `error`. |
+| `priority` | enum | Optional `high`, `medium`, or `low`. |
+| `note` | string | Optional technical context or evidence. |
+| `children` | array | Optional on roots; each child is a leaf and a root allows 1–9 children. |
+
+Root IDs must be unique. Child IDs must belong to their root and must be
+unique within that root. A child cannot contain another `children` array.
+
+### Create
+
+`create` accepts a non-empty `todos` array. It is rejected while any existing
+todo is open (`pending`, `in_progress`, or `error`). Finish or cancel the old
+list before creating a new one.
+
+```json
+{
+  "operation": "create",
+  "todos": [
+    {
+      "id": 1,
+      "content": "Implement the feature",
+      "status": "in_progress",
+      "note": "Keep the API backwards compatible",
+      "children": [
+        { "id": 1.1, "content": "Write the handler", "status": "pending" },
+        { "id": 1.2, "content": "Add tests", "status": "pending" }
+      ]
+    },
+    { "id": 2, "content": "Update documentation", "status": "pending" }
+  ]
+}
+```
 
 ### Read
 
-By default `read` returns the whole list as a tree. An optional `scope` narrows it to one
-branch or one row, which keeps the response small on a long list.
-
-| `scope`    | `target`            | Returns                                      |
-| ---------- | ------------------- | -------------------------------------------- |
-| `all`      | —                   | the whole list (default)                     |
-| `root`     | a root id, e.g. `1` | that root and all of its subtasks            |
-| `children` | a subtask id, `1.1` | that subtask, with its root shown as context |
-| `item`     | `1` or `1.1`        | only that row                                |
-
-`target` is only valid together with `scope: "root"`, `"children"`, or
-`"item"` — passing it without one is rejected, so a scope can never be silently
-ignored.
-
-#### Compact summary format
-
-Pass `format: "summary"` to get a compact markdown list of completed tasks with notes (ideal for subagent prompt injection or context handoff):
-
-```json
-{ "operation": "read", "format": "summary" }
-```
-
-```text
-- [x] 1.1 Database schema: created migrations
-- [x] 1.2 API endpoints: handlers verified
-```
-
-#### Progress tree format
-
-The whole list:
+`read` defaults to the complete list in `tree` format:
 
 ```json
 { "operation": "read" }
 ```
 
+The supported scopes are:
+
+| Scope | Target | Result |
+| --- | --- | --- |
+| `all` | omitted | Entire list. |
+| `root` | root ID such as `1` | The root and all of its children. |
+| `item` | root or child ID | One root row, or a child with its root as context. |
+
+`target` is required for `root` and `item`, and is not allowed for `all`.
+Unknown targets return an error instead of silently returning the whole list.
+
+Use `format: "summary"` for a compact completed-task summary:
+
+```json
+{ "operation": "read", "format": "summary", "scope": "all" }
+```
+
+Typical tree output:
+
 ```text
-[~] 1. Design architecture (1/2)
-    ↳ note: Keep the hierarchy shallow
-    [x] 1.1 Database schema
-    [~] 1.2 API endpoints
-[ ] 2. Write tests
+[~] 1. Implement the feature (0/2)
+    ↳ note: Keep the API backwards compatible
+    [ ] 1.1 Write the handler
+    [ ] 1.2 Add tests
+[ ] 2. Update documentation
 ```
 
-One branch (`root`):
-
-```json
-{ "operation": "read", "scope": "root", "target": 1 }
-```
-
-A single subtask, with its root as context (`children`):
-
-```json
-{ "operation": "read", "scope": "children", "target": 1.2 }
-```
-
-```text
-[~] 1. Design architecture (1/2)
-    [~] 1.2 API endpoints
-```
-
-One row with no context (`item`):
-
-```json
-{ "operation": "read", "scope": "item", "target": 1.2 }
-```
-
-Markers: `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]` cancelled,
-`[!]` error. Notes render under their item as `↳ note: …`.
-
-Even when a scope hides rows, the root keeps its real `(completed/total)` count —
-only the display is narrowed.
-
-### Write
-
-`write` initializes a session or clears it. A non-empty list is only accepted
-while the session has no todos yet.
-
-```json
-{
-  "operation": "write",
-  "todos": [
-    {
-      "id": 1,
-      "content": "Add auth endpoint",
-      "status": "in_progress",
-      "note": "Return 401 on bad token",
-      "children": [
-        { "id": 1.1, "content": "Write handler", "status": "pending" }
-      ]
-    },
-    { "id": 2, "content": "Update docs", "status": "pending" }
-  ]
-}
-```
-
-Clear the current list:
-
-```json
-{ "operation": "write", "todos": [] }
-```
-
-### Fields
-
-#### Todo item fields
-
-| Field      | Type                        | Required      | Description                                                     |
-| ---------- | --------------------------- | ------------- | --------------------------------------------------------------- |
-| `id`       | number                      | Yes           | Root: positive integer. Child: `<root>.<n>`, such as `1.1`.     |
-| `content`  | string                      | Yes           | Task summary.                                                   |
-| `status`   | enum                        | Yes           | `pending`, `in_progress`, `completed`, `cancelled`, or `error`. |
-| `priority` | `high` \| `medium` \| `low` | No            | Optional priority label.                                        |
-| `note`     | string                      | No            | Technical context or evidence.                                  |
-| `children` | array of child items        | No, root only | Up to 9 subtasks. Child items cannot contain more children.     |
-
-Root IDs must be unique. A child ID must start with its parent root ID.
+Markers are `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]`
+cancelled, and `[!]` error. A scoped root retains its real completion count;
+only the displayed rows are narrowed.
 
 ### Update
 
-`update` modifies existing items through the `updates` property. It accepts:
-1. **A single update object** for changing one task.
-2. **An array of 1 to 2 update objects** applied sequentially in array order in a single transaction (ideal for finishing the active task and starting the next one).
+`updates` may be one object or an array of 1–10 update objects. Arrays are
+applied in order inside one transaction. Each ID may appear only once, and at
+most one update in a call may set `in_progress`.
 
-If any item in the batch fails validation, the entire update is rolled back.
-
-#### Single update:
-
-```json
-{
-  "operation": "update",
-  "updates": {
-    "id": 1.1,
-    "status": "completed",
-    "note": "Tests passing"
-  }
-}
-```
-
-#### Sequential pair (finish current with note + start next):
-
-Every item in the batch supports all optional fields (`note`, `content`, `priority`):
+Every update must change at least one of `status`, `content`, `priority`, or
+`note`. Omit a field to keep it unchanged. Pass `null` for `priority` or
+`note` to remove it.
 
 ```json
 {
@@ -200,58 +144,72 @@ Every item in the batch supports all optional fields (`note`, `content`, `priori
     {
       "id": 1.1,
       "status": "completed",
-      "note": "Unit tests passing and schema verified"
+      "note": "Handler and tests verified"
     },
     {
       "id": 1.2,
-      "status": "in_progress",
-      "note": "Implementing UI integration"
+      "status": "in_progress"
     }
   ]
 }
 ```
 
-#### Cancel remaining on abort:
+The batch is atomic: if one update fails state validation, none of the updates
+are applied. Each later update is validated against the state produced by the
+previous update, so finishing one active item and then starting its sibling is
+valid.
 
-Set `cancel_remaining: true` when marking a task `error` or `cancelled` to automatically cancel any remaining `pending` subtasks in that root:
+### Status and ordering rules
+
+- `pending` may advance to `in_progress`, `completed`, `cancelled`, or `error`.
+- `in_progress` may advance to `completed`, `cancelled`, or `error`.
+- `error` may be repaired to `in_progress`, `completed`, or `cancelled`.
+- `completed` and `cancelled` are final and locked.
+- Roots are updated in order: finish or cancel the first open root before
+  touching a later root. A root containing an error may be repaired early.
+- Only one root and one child in that root may be `in_progress` at a time.
+
+### Clear
+
+`clear` is destructive and requires the literal boolean `true`:
 
 ```json
-{
-  "operation": "update",
-  "updates": {
-    "id": 1.2,
-    "status": "error",
-    "cancel_remaining": true,
-    "note": "Fatal build error"
-  }
-}
+{ "operation": "clear", "confirm": true }
 ```
 
-### Update Item Fields
+Clear is rejected while any todo is open (`pending`, `in_progress`, or
+`error`). It succeeds on an already empty list and is idempotent.
 
-| Field              | Required | Notes                                                                                    |
-| ------------------ | -------- | ---------------------------------------------------------------------------------------- |
-| `id`               | Yes      | Root number or subtask number (`1`, `1.1`). String numbers like `"1.1"` are also coerced.|
-| `status`           | Yes      | `pending`, `in_progress`, `completed`, `cancelled`, `error`.                             |
-| `content`          | No       | One-line summary shown in the widget.                                                    |
-| `note`             | No       | Technical context or evidence. Pass `null` to remove.                                    |
-| `priority`         | No       | `high`, `medium`, or `low`. Pass `null` to remove.                                       |
-| `cancel_remaining` | No       | `boolean`. If `true` with `error`/`cancelled`, cancels remaining pending subtasks in root|
+## Tool responses
+
+Successful writes return the updated `todos` and compact transition output such
+as:
+
+```text
+Todos (1/2).
+✓ 1/2: Write the handler
+Next: 1.2 Add tests
+```
+
+Update refusals include a stable error code and the unchanged list. Read
+responses include the selected list and rendered content; an unknown scoped
+target returns `No todo <id>.`.
 
 ## Skills
 
-`skills/todolist` and `skills/continue-todolist` ship with the plugin and are
-registered automatically. They explain how to use the tool and how to resume
-tracked work.
+The plugin bundles and automatically registers:
+
+- `skills/todolist` — how to create and operate a todo list.
+- `skills/continue-todolist` — how to resume an existing list after an interruption.
 
 ## Development
 
 ```bash
-bun install     # runs prepare -> compiles dist/
-bun run check   # typecheck + tests
-bun run compile # rebuild dist/ (tsc + Solid JSX transform)
+bun install      # installs dependencies and runs prepare
+bun run check    # typecheck + tests
+bun run compile  # tsc + Solid JSX transform + import rewriting
 ```
 
-`bun run compile` must be used instead of `bun run build`: the raw `tsc` pass
-alone leaves intermediate `.jsx` files in `dist/`, which Bun then prefers over
-the compiled `.js` and reports as `No renderer found` / `ENOENT ... dist/tui.jsx`.
+Run `bun run compile` after changing `src/`. The final build must contain the
+compiled `.js` files and no stale `.jsx` runtime files; OpenCode's loader scans
+the emitted imports and may otherwise resolve the wrong artifact.
