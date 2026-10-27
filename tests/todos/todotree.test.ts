@@ -444,7 +444,7 @@ describe("TodoTree.render", () => {
 
         expect(rendered.split("\n")).toEqual([
             "[x] 1. ~~Task 1~~",
-            "[-] 2. Task 2",
+            "[!] 2. Task 2",
             "[!] 3. Task 3",
             "[ ] 4. Task 4",
         ]);

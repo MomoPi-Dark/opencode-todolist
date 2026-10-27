@@ -12,6 +12,9 @@ Local OpenCode plugin for hierarchical todo tracking. It provides the
 - Atomic ordered update batches of up to 10 items.
 - Forward-only status transitions and enforced root order.
 - Scoped tree reads and compact completed-task summaries.
+- Reopenable cancelled work with an explicit reopen note.
+- Root protection while child tasks remain open.
+- Root error/cancellation indicators, including red markers for child errors.
 - Real-time TUI progress display with transition output and next-step hints.
 - Bundled `todolist` and `continue-todolist` skills, registered automatically.
 
@@ -67,7 +70,8 @@ unique within that root. A child cannot contain another `children` array.
 
 `create` accepts a non-empty `todos` array. It is rejected while any existing
 todo is open (`pending`, `in_progress`, or `error`). Finish or cancel the old
-list before creating a new one.
+list before creating a new one. For a root with children, child rows must be
+handled individually; a root cannot change status while any child is open.
 
 ```json
 {
@@ -103,7 +107,7 @@ The supported scopes are:
 | `all` | omitted | Entire list. |
 | `root` | root ID such as `1` | The root and all of its children. |
 | `children` | child ID such as `2.1` | The selected child with its root shown above it. |
-| `item` | root or child ID | One root row, or a child with its root as context. |
+| `item` | root or child ID | Only the targeted root or child row. |
 
 `target` is required for `root`, `children`, and `item`, and is not allowed for
 `all`. The `children` target must be a child ID such as `2.1`; a root ID is
@@ -128,6 +132,21 @@ Use `format: "summary"` for a compact completed-task summary:
 { "operation": "read", "format": "summary", "scope": "all" }
 ```
 
+The summary contains only rows whose status is `completed`. Root and child
+rows are rendered as one-line markdown entries; pending, in-progress,
+cancelled, and error rows are omitted:
+
+```text
+- [x] 1 Implement the feature: implementation verified
+- [x] 1.1 Write the handler: tests passing
+```
+
+If the selected scope contains no completed rows, the response is:
+
+```text
+No completed tasks yet.
+```
+
 Typical tree output:
 
 ```text
@@ -139,8 +158,24 @@ Typical tree output:
 ```
 
 Markers are `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]`
-cancelled, and `[!]` error. A scoped root retains its real completion count;
-only the displayed rows are narrowed.
+cancelled, and `[!]` error. Root rows use `[!]` when the root itself is
+`error` or `cancelled`, or when any child has `error` status. In the TUI, that
+root marker is red; a child error changes the visual marker only and does not
+change the root's stored status.
+
+For example:
+
+```text
+[!] 1. Implement the feature (1/3)
+    [x] 1.1 Write the handler
+    [!] 1.2 Run the integration test
+    [-] 1.3 Cancelled test fixture
+```
+
+A root update to `error` or `cancelled` cancels its `pending` and
+`in_progress` children while preserving children already marked `error`,
+`completed`, or `cancelled`. Normally, however, a root with open children is
+required to finish or cancel those children first.
 
 ### Update
 
@@ -179,10 +214,16 @@ valid.
 - `pending` may advance to `in_progress`, `completed`, `cancelled`, or `error`.
 - `in_progress` may advance to `completed`, `cancelled`, or `error`.
 - `error` may be repaired to `in_progress`, `completed`, or `cancelled`.
-- `completed` and `cancelled` are final and locked.
+- `cancelled` may be reopened to `in_progress`.
+- `completed` is final and locked.
 - Roots are updated in order: finish or cancel the first open root before
   touching a later root. A root containing an error may be repaired early.
 - Only one root and one child in that root may be `in_progress` at a time.
+- A root with children cannot change status while any child is `pending`,
+  `in_progress`, or `error`; finish or cancel all children first.
+
+Reopening a cancelled item adds the note `Reopened from cancelled`. Children
+that were cancelled are not reopened automatically; reopen them explicitly.
 
 ### Clear
 
@@ -193,7 +234,8 @@ valid.
 ```
 
 Clear is rejected while any todo is open (`pending`, `in_progress`, or
-`error`). It succeeds on an already empty list and is idempotent.
+`error`). `completed` and `cancelled` rows are closed for clear purposes. It
+succeeds on an already empty list and is idempotent.
 
 ## Tool responses
 

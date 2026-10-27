@@ -52,8 +52,8 @@ Use the smallest read that answers the question:
 ```
 
 `all` reads the complete list, `root` reads one root and its children,
-`children` reads a child with its root context, and `item` reads one root or
-child row. `summary` shows completed rows only.
+`children` reads a child with its root context, and `item` reads only one root
+or child row. `summary` shows completed rows only.
 
 ## Status Handling
 

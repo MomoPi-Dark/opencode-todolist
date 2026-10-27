@@ -407,10 +407,13 @@ export class TodoTree {
         for (const root of todos) {
             const progress = TodoTree.calculateProgress(root.children);
             const progressText = progress ? ` (${progress.label})` : "";
+            const hasChildError = (root.children ?? []).some(
+                (child) => child.status === "error",
+            );
 
             if (!visible || visible.has(root.id)) {
                 lines.push(
-                    `${TodoTree.icon(root.status)} ${TodoTree.renderLabel(root, 0)}${progressText}`,
+                    `${TodoTree.rootIcon(root, hasChildError)} ${TodoTree.renderLabel(root, 0)}${progressText}`,
                 );
                 if (root.note) lines.push(`    ↳ note: ${root.note}`);
             }
@@ -460,6 +463,12 @@ export class TodoTree {
 
     private static icon(status: TodoStatus): string {
         return TodoTree.STATUS_ICONS[status] ?? TodoTree.DEFAULT_ICON;
+    }
+
+    private static rootIcon(root: TodoRootItem, hasChildError: boolean): string {
+        return hasChildError || root.status === "error" || root.status === "cancelled"
+            ? "[!]"
+            : TodoTree.icon(root.status);
     }
 
     /**

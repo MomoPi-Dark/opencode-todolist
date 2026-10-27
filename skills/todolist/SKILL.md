@@ -85,7 +85,7 @@ Supported scopes:
 - `all` returns the whole list and has no `target`.
 - `root` requires a root id and returns that root with all its children.
 - `children` requires a child id and returns that child with its root shown above it.
-- `item` requires a root or child id and narrows the displayed row.
+- `item` requires a root or child id and returns only that targeted row.
 - An unknown target is an error; it does not silently return the full list.
 
 ### `update`

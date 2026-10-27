@@ -69,15 +69,7 @@ export function handleRead(
         scoped = [found.root];
 
         if (input.scope === "item") {
-            visibleIds =
-                found.depth === 0
-                    ? // A root targeted as an item is that one row; its subtasks belong
-                    // to `scope: "root"`.
-                    [found.root.id]
-                    : // A subtask alone would print as an indented row with no parent, so
-                    // the root line comes along as context. Its progress label is the
-                    // real one, because the subtasks are still in `scoped`.
-                    [found.root.id, found.item.id];
+            visibleIds = [found.item.id];
         } else if (input.scope === "children") {
             if (found.depth === 0) {
                 return {

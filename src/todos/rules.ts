@@ -19,6 +19,7 @@ export type TodoRuleCode =
     | "backward_transition"
     | "root_busy"
     | "child_busy"
+    | "child_open"
     | "cancel_remaining_status"
     | "list_invalid";
 
@@ -96,7 +97,7 @@ export class TodoRules {
             in_progress: ["completed", "cancelled", "error"],
             error: ["in_progress", "completed", "cancelled"],
             completed: [],
-            cancelled: [],
+            cancelled: ["in_progress"],
         };
 
     static isFinal(status: TodoStatus): boolean {
@@ -162,14 +163,27 @@ export class TodoRules {
     static checkScope(
         todos: TodoList,
         location: TodoLocation,
-        update: Pick<TodoUpdateItem, "id" | "status">,
+        update: Pick<TodoUpdateItem, "id" | "status" | "cancel_remaining">,
     ): TodoRuleError | null {
         const id = update.id;
 
-        if (isFinal(location.item.status)) {
+        if (isFinal(location.item.status) && location.item.status !== "cancelled") {
             return fail(
                 "item_final",
                 `${id} is '${location.item.status}' and locked. Reopen it by creating a new todo instead.`,
+                id,
+            );
+        }
+
+        if (
+            location.depth === 0 &&
+            update.status !== undefined &&
+            (location.root.children ?? []).some((child) => !isFinal(child.status)) &&
+            update.cancel_remaining !== true
+        ) {
+            return fail(
+                "child_open",
+                `Root ${id} has open children. Finish or cancel every child before changing the root status.`,
                 id,
             );
         }
@@ -179,7 +193,7 @@ export class TodoRules {
         // Reachable only from a stored list where a closed root still holds an
         // open subtask: every root is final, so the work belongs to a task that
         // was already dropped or finished. Editing it would resurrect that root.
-        if (firstOpenIndex === -1) {
+        if (firstOpenIndex === -1 && !(location.item.status === "cancelled" && update.status === "in_progress")) {
             return fail(
                 "list_final",
                 "Every root is already completed or cancelled, so there is nothing left to update. Create a new todo instead.",
@@ -190,6 +204,7 @@ export class TodoRules {
         const targetRootIndex = todos.indexOf(location.root);
         if (
             targetRootIndex !== firstOpenIndex &&
+            !(location.item.status === "cancelled" && update.status === "in_progress") &&
             !TodoRules.holdsError(location.root)
         ) {
             const blocking = todos[firstOpenIndex];
@@ -348,10 +363,16 @@ export class TodoRules {
             status: patched.status,
         });
 
-        if (!cancelRemaining || !patched.children) return patched;
+        const cancelChildren =
+            cancelRemaining ||
+            patched.status === "error" ||
+            patched.status === "cancelled";
+        if (!cancelChildren || !patched.children) return patched;
 
         const children = patched.children.map((child) => {
-            if (child.status !== "pending") return child;
+            if (child.status !== "pending" && child.status !== "in_progress") {
+                return child;
+            }
             report.push({
                 id: child.id,
                 scope: "child",
@@ -435,6 +456,12 @@ export class TodoRules {
         if (update.note !== undefined) {
             if (update.note === null) delete next.note;
             else next.note = update.note;
+        }
+
+        if (item.status === "cancelled" && update.status === "in_progress") {
+            next.note = next.note
+                ? `${next.note}; Reopened from cancelled`
+                : "Reopened from cancelled";
         }
 
         return next as T;

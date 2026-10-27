@@ -52,8 +52,9 @@ describe("handleRead", () => {
         const branch = success(handleRead(todos, read({ scope: "root", target: 1 })));
         expect(branch.content).toContain("1.2 Sub 1.2");
         const item = success(handleRead(todos, read({ scope: "item", target: 1.2 })));
-        expect(item.visibleIds).toEqual([1, 1.2]);
-        expect(item.content).toContain("(1/2)");
+        expect(item.visibleIds).toEqual([1.2]);
+        expect(item.content).toContain("1.2 Sub 1.2");
+        expect(item.content).not.toContain("1. Task 1");
         const children = success(handleRead(todos, read({ scope: "children", target: 1.2 })));
         expect(children.visibleIds).toEqual([1, 1.2]);
         expect(children.content).toContain("1. Task 1");

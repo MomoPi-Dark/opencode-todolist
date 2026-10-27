@@ -51,7 +51,7 @@ describe("TodoRules.canTransition", () => {
             "in_progress",
             "completed",
             "cancelled",
-            "error",
+            "cancelled",
         ] as const) {
             expect(TodoRules.canTransition(status, status)).toBe(true);
         }
@@ -62,7 +62,7 @@ describe("TodoRules.canTransition", () => {
             "in_progress",
             "completed",
             "cancelled",
-            "error",
+            "cancelled",
         ] as const) {
             expect(TodoRules.canTransition("pending", to)).toBe(true);
         }
@@ -82,13 +82,13 @@ describe("TodoRules.canTransition", () => {
         expect(TodoRules.canTransition("error", "pending")).toBe(false);
     });
 
-    test("completed and cancelled are locked", () => {
+    test("completed is locked and cancelled can reopen", () => {
         for (const to of [
             "pending",
             "in_progress",
             "completed",
             "cancelled",
-            "error",
+            "cancelled",
         ] as const) {
             if (to === "completed") continue;
             expect(TodoRules.canTransition("completed", to)).toBe(false);
@@ -98,9 +98,9 @@ describe("TodoRules.canTransition", () => {
             "in_progress",
             "completed",
             "cancelled",
-            "error",
+            "cancelled",
         ] as const) {
-            if (to === "cancelled") continue;
+            if (to === "in_progress" || to === "cancelled") continue;
             expect(TodoRules.canTransition("cancelled", to)).toBe(false);
         }
     });
@@ -115,6 +115,70 @@ describe("TodoRules.canTransition", () => {
 });
 
 describe("TodoRules.apply — basic patches", () => {
+    test("reopens cancelled todo with a marker note", () => {
+        const todos = accepts(
+            [root(1, { status: "cancelled", note: "old" })],
+            update({ id: 1, status: "in_progress" }),
+        );
+        expect(todos[0]?.status).toBe("in_progress");
+        expect(todos[0]?.note).toContain("Reopened from cancelled");
+    });
+
+    test("blocks root status changes while children are open", () => {
+        refuses(
+            [root(1, { children: [child(1.1)] })],
+            update({ id: 1, status: "error" }),
+            "child_open",
+        );
+    });
+    test("root error requires children to be final", () => {
+        refuses(
+            [root(1, { children: [child(1.1, { status: "error" })] })],
+            update({ id: 1, status: "error" }),
+            "child_open",
+        );
+    });
+
+    test("root cancellation is allowed after children are final", () => {
+        const todos = accepts(
+            [
+                root(1, {
+                    children: [
+                        child(1.1, { status: "cancelled" }),
+                        child(1.2, { status: "cancelled" }),
+                        child(1.3, { status: "completed" }),
+                        child(1.4, { status: "cancelled" }),
+                        child(1.5, { status: "cancelled" }),
+                    ],
+                }),
+            ],
+            update({ id: 1, status: "cancelled" }),
+        );
+        expect(todos[0]?.children?.map((item) => item.status)).toEqual([
+            "cancelled",
+            "cancelled",
+            "completed",
+            "cancelled",
+            "cancelled",
+        ]);
+    });
+
+    test("child error does not cancel sibling children", () => {
+        const todos = accepts(
+            [
+                root(1, {
+                    status: "in_progress",
+                    children: [child(1.1, { status: "in_progress" }), child(1.2)],
+                }),
+            ],
+            update({ id: 1.1, status: "error" }),
+        );
+        expect(todos[0]?.children?.map((item) => item.status)).toEqual([
+            "error",
+            "pending",
+        ]);
+    });
+
     test("advances a root to in_progress", () => {
         const todos = accepts([root(1)], update({ id: 1, status: "in_progress" }));
         expect(todos[0]?.status).toBe("in_progress");
@@ -214,12 +278,12 @@ describe("TodoRules.apply — unknown and locked rows", () => {
         );
     });
 
-    test("refuses a cancelled row", () => {
-        refuses(
+    test("allows a cancelled row to reopen", () => {
+        const todos = accepts(
             [root(1, { status: "cancelled" })],
-            update({ id: 1, content: "edit" }),
-            "item_final",
+            update({ id: 1, status: "in_progress" }),
         );
+        expect(todos[0]?.status).toBe("in_progress");
     });
 
     test("refuses when every root is finished", () => {
