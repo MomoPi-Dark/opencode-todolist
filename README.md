@@ -102,10 +102,25 @@ The supported scopes are:
 | --- | --- | --- |
 | `all` | omitted | Entire list. |
 | `root` | root ID such as `1` | The root and all of its children. |
+| `children` | child ID such as `2.1` | The selected child with its root shown above it. |
 | `item` | root or child ID | One root row, or a child with its root as context. |
 
-`target` is required for `root` and `item`, and is not allowed for `all`.
+`target` is required for `root`, `children`, and `item`, and is not allowed for
+`all`. The `children` target must be a child ID such as `2.1`; a root ID is
+rejected for this scope.
 Unknown targets return an error instead of silently returning the whole list.
+
+Use `children` to show one child with its parent root while hiding sibling
+children:
+
+```json
+{ "operation": "read", "scope": "children", "target": 2.1 }
+```
+
+```text
+[ ] 2. Backend work (1/5)
+    [ ] 2.1 Add the handler
+```
 
 Use `format: "summary"` for a compact completed-task summary:
 
