@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
-const debug = process.env.TODO_HINT_DEBUG === "1";
+const debug = process.env.TODO_DEBUG === "1";
 
 export interface LocalSkill {
   name: string;

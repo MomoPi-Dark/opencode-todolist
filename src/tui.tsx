@@ -15,7 +15,12 @@ export default Plugin.define({
         );
       },
     });
-
+    if (process.env.TODO_DEBUG) {
+      context.ui.toast.show({
+        message: "Todolist loaded",
+        variant: "success",
+      });
+    }
     return () => {
       releaseSlot();
     };

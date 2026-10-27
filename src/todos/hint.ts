@@ -240,7 +240,7 @@ export function buildTodoHint(
 }
 
 const HINT_MARKER = "<todo_state>";
-const DEBUG = process.env.TODO_HINT_DEBUG === "1";
+const DEBUG = process.env.TODO_DEBUG === "1";
 
 const log = (...args: unknown[]): void => {
   if (DEBUG) console.error("[todo]", ...args);
