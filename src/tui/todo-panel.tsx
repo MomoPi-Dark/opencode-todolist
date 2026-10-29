@@ -435,11 +435,21 @@ export function TodoProgress(props: {
   const clearTodos = async () => {
     const sid = sessionID();
     if (!sid) return;
+
+    // `confirm` resolves to undefined when the dialog is dismissed without a
+    // choice, so anything short of an explicit true leaves the list alone.
+    const ok = await context.ui.dialog.confirm({
+      title: "Clear the todo list?",
+      message: "Every item of this session is removed from the stored list.",
+      label: { confirm: "Clear", cancel: "Cancel" },
+    });
+    if (ok !== true) return;
+
     try {
       const res = await context.client.rpc(Todos).clear({
         sessionID: sid,
-        // The keybind is the user's own action; the open-list guard is for the
-        // tool, where a model could erase a half-done plan.
+        // The user confirmed in the dialog above; the open-list guard is for the
+        // tool, where a model could erase a half-done plan on its own.
         force: true,
       });
       if (!res.ok) {

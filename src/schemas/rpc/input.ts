@@ -30,8 +30,8 @@ export const TodoRpcClearInputSchema = SessionIdSchema.extend({
     confirm: z.boolean().optional(),
     /**
      * Skips the "list still has open todos" guard. Set by the GUI and TUI, where
-     * the user has already confirmed through a dialog and owns the data. The tool
-     * never sets it, so a model cannot erase a half-done plan by accident.
+     * the user confirmed through a dialog they see. Not part of the tool schema:
+     * the tool schema is sent on every request, and a model must keep the guard.
      */
     force: z.boolean().optional(),
 });
