@@ -143,8 +143,7 @@ export default Plugin.define({
         keywords: "todo todolist checklist",
         group: "Session",
         section: "session",
-        // The real binding lives here. The menu item below only shows it.
-        bind: "mod+shift+t",
+        bind: "mod+shift+l",
         enabled: !!ctx.sessions.current(),
         run: toggle,
       }),
@@ -152,9 +151,7 @@ export default Plugin.define({
 
     ctx.add(MenuItem, (): MenuItem => {
       const session = ctx.sessions.current();
-
       const view = session ? views[session?.id] : undefined;
-
       return {
         menu: "session.panel",
         id: "todos",
@@ -165,8 +162,6 @@ export default Plugin.define({
         icon: "checklist",
         opened: !!session && ctx.layout.state(panelKey, session) !== "closed",
         run: toggle,
-        // `keybind` is a published command id, not a chord: the menu resolves it
-        // to whatever shortcut the user has configured.
         keybind: `${ctx.id}.toggle`,
       };
     });
