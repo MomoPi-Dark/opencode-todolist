@@ -10,7 +10,11 @@ import {
 } from "solid-js";
 import { Glyph } from "../icons/glyph";
 import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/icons";
-import { Todos, createTodoSubscription } from "../rpc";
+import {
+  Todos,
+  createTodoSubscription,
+  type TodoSubscription,
+} from "../rpc";
 import type { TodoRootItem } from "../schemas/todo/item";
 import { isOpenStatus, type TodoStatus } from "../schemas/todo/status";
 import { TodoTree } from "../todos/todotree";
@@ -280,27 +284,28 @@ export function TodoProgress(props: {
   const [todos, setTodos] = createSignal<TodoRootItem[]>([]);
 
   // One shared RPC path: initial read plus live `changed` events, re-bound
-  // whenever the panel's session changes.
-  let disposeSubscription: (() => void) | undefined;
+  // whenever the panel's session changes. The client is read through an
+  // accessor because it is replaced after a server restart.
+  let subscription: TodoSubscription | undefined;
 
   createEffect(() => {
     const sid = sessionID();
-    disposeSubscription?.();
+    subscription?.dispose();
 
     if (!sid) {
       setTodos([]);
       return;
     }
 
-    disposeSubscription = createTodoSubscription({
-      client: context.client,
+    subscription = createTodoSubscription({
+      client: () => context.client,
       sessionID: () => sid,
       onChange: (next) => setTodos(next ?? []),
       onError: () => setTodos([]),
     });
   });
 
-  onCleanup(() => disposeSubscription?.());
+  onCleanup(() => subscription?.dispose());
 
   const [isCollapsed, setIsCollapsed] = createSignal(false);
   const [isContinuePending, setIsContinuePending] = createSignal(false);

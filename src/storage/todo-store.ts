@@ -57,11 +57,39 @@ export function legacyKey(sessionID: string): string {
   return `s_${digest.slice(0, 32)}`;
 }
 
+/**
+ * Builds the upgrade notice from a report.
+ *
+ * Pure on purpose: it can be tested without touching storage. `failed` outranks
+ * `skipped`, because a file that could not be imported is data the user may have
+ * lost, while a skipped one was deliberately left alone. Reports `undefined` for
+ * a clean migration: narrating the default outcome is noise.
+ */
+export function formatMigrationWarning(
+  report: MigrationResult,
+  legacyDir: string,
+  dbPath: string,
+): string | undefined {
+  if (report.failed.length > 0) {
+    const names = report.failed.map((entry) => entry.file).join(", ");
+    return `Todo upgrade incomplete: ${report.failed.length} legacy file(s) could not be imported (${names}). They are still in ${legacyDir}; fix or import them by hand. Everything else migrated to ${dbPath}.`;
+  }
+
+  if (report.skipped.length > 0) {
+    const names = report.skipped.join(", ");
+    return `Todo upgrade left ${report.skipped.length} legacy file(s) in place (${names}): they were not imported. Check them in ${legacyDir} if they still matter.`;
+  }
+
+  return undefined;
+}
+
 // Factory function encapsulating platform context and migration state
 
 export function createTodoStore(ctx: PlatformContext = {}) {
   const importedBaseDirs = new Set<string>();
   let legacyDatabaseChecked = false;
+  /** Set once the one-shot upgrade notice has been handed to a caller. */
+  let noticeTaken = false;
   let migrationState: MigrationResult = {
     imported: [],
     skipped: [],
@@ -185,11 +213,23 @@ export function createTodoStore(ctx: PlatformContext = {}) {
   }
 
   function getWarning(): string | undefined {
-    const { failed } = getReport();
-    if (failed.length === 0) return undefined;
+    return formatMigrationWarning(
+      getReport(),
+      resolveLegacyDir(),
+      getDbPath(),
+    );
+  }
 
-    const names = failed.map((entry) => entry.file).join(", ");
-    return `Todo upgrade incomplete: ${failed.length} legacy file(s) could not be imported (${names}). They are still in ${resolveLegacyDir()}; fix or import them by hand. Everything else migrated to ${getDbPath()}.`;
+  /**
+   * The notice, handed out once per store. Tool replies pay tokens for every
+   * character, and the migration outcome never changes within a process, so
+   * repeating it on every call would be pure waste.
+   */
+  function takeNotice(): string | undefined {
+    if (noticeTaken) return undefined;
+    const message = getWarning();
+    if (message !== undefined) noticeTaken = true;
+    return message;
   }
 
   /** Prefers the plain key, falls back to the hashed legacy key if only that exists. */
@@ -287,6 +327,7 @@ export function createTodoStore(ctx: PlatformContext = {}) {
   function reset(): void {
     importedBaseDirs.clear();
     legacyDatabaseChecked = false;
+    noticeTaken = false;
     migrationState = { imported: [], skipped: [], failed: [] };
     resetDatabaseForTests();
   }
@@ -299,6 +340,7 @@ export function createTodoStore(ctx: PlatformContext = {}) {
     getDatabasePath: getDbPath,
     getMigrationReport: getReport,
     getMigrationWarning: getWarning,
+    takeMigrationNotice: takeNotice,
     readTodos: read,
     readTodosSync: readSync,
     readTodoData: readData,
@@ -341,6 +383,10 @@ export const getMigrationReport = (ctx?: PlatformContext): MigrationResult =>
 
 export const getMigrationWarning = (ctx?: PlatformContext) =>
   storeFor(ctx).getMigrationWarning();
+
+/** Non-consuming read is above; this one hands the notice out at most once. */
+export const takeMigrationNotice = (ctx?: PlatformContext) =>
+  storeFor(ctx).takeMigrationNotice();
 
 export const readTodos = (sessionID: string, ctx?: PlatformContext) =>
   storeFor(ctx).readTodos(sessionID);

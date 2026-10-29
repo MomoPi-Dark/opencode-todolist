@@ -8,10 +8,15 @@ import {
   Slot,
   type PanelTab,
 } from "@opencode/plugin/gui";
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
 import { TodoPanel } from "./gui/todo-panel";
-import { Todos, type TodoView, createTodoSubscription, toTodoView } from "./rpc";
+import {
+  createTodoSubscription,
+  toTodoView,
+  type TodoSubscription,
+  type TodoView,
+} from "./rpc";
 import { isOpenStatus } from "./schemas/todo/status";
 
 export default Plugin.define({
@@ -22,7 +27,18 @@ export default Plugin.define({
     );
     const [busy, setBusy] = createStore<Record<string, boolean>>({});
 
-    let disposeSubscription: (() => void) | undefined;
+    let subscription: TodoSubscription | undefined;
+
+    /**
+     * The app's own server, resolved reactively. Reading `client` through the
+     * server ref (instead of capturing `ctx.client`) is what keeps calls working
+     * after the server restarts.
+     */
+    const server = () =>
+      ctx.servers
+        .list()
+        .map((id) => ctx.servers.get(id))
+        .find((entry) => entry?.builtin);
 
     const refreshBusy = (sessionID: string) => {
       void ctx.client.session
@@ -33,9 +49,9 @@ export default Plugin.define({
 
     /** Re-binds the shared RPC subscription to the given session. */
     const subscribeTodos = (sessionID: string) => {
-      disposeSubscription?.();
-      disposeSubscription = createTodoSubscription({
-        client: ctx.client,
+      subscription?.dispose();
+      subscription = createTodoSubscription({
+        client: () => server()!.client,
         sessionID: () => sessionID,
         onChange: (todos) => {
           setViews(sessionID, todos ? toTodoView(todos) : undefined);
@@ -50,6 +66,14 @@ export default Plugin.define({
     };
 
     createKeyed(() => ctx.sessions.current()?.id, refresh);
+
+    // Subscriptions are live only: events emitted while the connection was down
+    // are lost, so reconnect must re-read instead of trusting the last state.
+    createEffect(() => {
+      const current = server();
+      if (!current?.connected) return;
+      subscription?.refresh();
+    });
 
     const running = new AbortController();
     void (async () => {
@@ -208,7 +232,7 @@ export default Plugin.define({
 
     return () => {
       running.abort();
-      disposeSubscription?.();
+      subscription?.dispose();
     };
   },
 });

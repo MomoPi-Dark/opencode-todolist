@@ -41,13 +41,17 @@ export const Todos = Rpc.define({
 });
 
 export interface WatchTodosOptions {
-    client: OpenCodeClient;
+    /**
+     * Read at call time. The OpenCode client is replaced after a server restart,
+     * so capturing it once would leave the listener bound to a dead client.
+     */
+    client: () => OpenCodeClient;
     sessionID?: () => string | undefined;
     onChange: (sessionID: string) => void;
 }
 
 export function watchTodos(options: WatchTodosOptions): () => void {
-    return options.client.rpc(Todos).events.on("changed", (event) => {
+    return options.client().rpc(Todos).events.on("changed", (event) => {
         const target = options.sessionID?.();
         if (target === undefined || event.data.sessionID === target) {
             options.onChange(event.data.sessionID);
@@ -56,22 +60,36 @@ export function watchTodos(options: WatchTodosOptions): () => void {
 }
 
 export interface TodoSubscriptionOptions {
-    client: OpenCodeClient;
+    /** Read at call time; same reason as {@link WatchTodosOptions.client}. */
+    client: () => OpenCodeClient;
     sessionID: () => string | undefined;
     /** Called with the latest list, or `undefined` when the session is unknown. */
     onChange: (todos: TodoRootItem[] | undefined) => void;
     onError?: (error: unknown) => void;
 }
 
+export interface TodoSubscription {
+    /**
+     * Re-reads now and re-arms the `changed` listener with the current client.
+     * Call it after the server reconnects: subscriptions are live only, so
+     * events emitted while the connection was down are lost.
+     */
+    refresh: () => void;
+    dispose: () => void;
+}
+
 /**
  * One data path for both frontends: initial read, live `changed` events and
  * cleanup. The TUI and the GUI used to each hand-roll this; keeping it in one
  * place is what makes them behave identically.
+ *
+ * Framework-free on purpose: both panels wire their own reactivity around it.
  */
 export function createTodoSubscription(
     options: TodoSubscriptionOptions,
-): () => void {
+): TodoSubscription {
     let disposed = false;
+    let unwatch: (() => void) | undefined;
 
     const load = (sid: string | undefined) => {
         if (disposed) return;
@@ -80,7 +98,7 @@ export function createTodoSubscription(
             return;
         }
 
-        void options.client
+        void options.client()
             .rpc(Todos)
             .read({ sessionID: sid })
             .then((res) => {
@@ -91,17 +109,30 @@ export function createTodoSubscription(
             });
     };
 
-    load(options.sessionID());
+    /** Re-reads and re-arms in one step, so the two can never drift apart. */
+    const refresh = () => {
+        if (disposed) return;
 
-    const unwatch = watchTodos({
-        client: options.client,
-        sessionID: options.sessionID,
-        onChange: (sid) => load(sid),
-    });
+        unwatch?.();
+        const sid = options.sessionID();
+        load(sid);
 
-    return () => {
-        disposed = true;
-        unwatch();
+        unwatch = watchTodos({
+            client: options.client,
+            sessionID: options.sessionID,
+            onChange: (changedSid) => load(changedSid),
+        });
+    };
+
+    refresh();
+
+    return {
+        refresh,
+        dispose: () => {
+            disposed = true;
+            unwatch?.();
+            unwatch = undefined;
+        },
     };
 }
 
