@@ -1,4 +1,8 @@
-import { type TodoOperationError } from "../../schemas/rpc/error";
+import {
+    operationErr,
+    operationOk,
+    type TodoOperationResult,
+} from "../../schemas/rpc/error";
 import type { TodoList, TodoRootItem } from "../../schemas/todo/item";
 import type { TodoReadInput } from "../../schemas/todo/read";
 import { readTodos } from "../../storage/todo-store";
@@ -7,27 +11,26 @@ import { TodoLocation, TodoTree } from "../todotree";
 const resolveTarget = (todos: TodoList, target: number): TodoLocation | null =>
     TodoTree.find(todos, target);
 
-export type ReadToolResult =
-    | {
-        ok: true;
-        todos: TodoRootItem[];
-        content: string;
-        visibleIds?: readonly number[];
-    }
-    | {
-        ok: false;
-        todos: TodoRootItem[];
-        content: string;
-        visibleIds?: readonly number[];
-        error: TodoOperationError;
-    };
+/**
+ * A read carries the ids the model is allowed to see so the renderer can scope
+ * its output, and always carries the text body.
+ */
+export type ReadToolResult = TodoOperationResult & {
+    visibleIds?: readonly number[];
+    content?: string;
+};
+
+const notFound = (todos: TodoList, message: string): ReadToolResult => ({
+    ...operationErr("not_found", message, [...todos]),
+    content: message,
+});
 
 export function handleRead(
     todos: TodoList,
     input: TodoReadInput,
 ): ReadToolResult {
     if (todos.length === 0) {
-        return { ok: true, todos: [], content: "No todos recorded." };
+        return operationOk([], "No todos recorded.");
     }
 
     let scoped: TodoRootItem[] = [...todos];
@@ -40,15 +43,7 @@ export function handleRead(
     ) {
         const found = resolveTarget(todos, input.target);
         if (!found) {
-            return {
-                ok: false,
-                todos: [...todos],
-                content: `No todo ${input.target}.`,
-                error: {
-                    code: "not_found",
-                    message: `No todo ${input.target}.`,
-                },
-            };
+            return notFound(todos, `No todo ${input.target}.`);
         }
 
         scoped = [found.root];
@@ -57,15 +52,7 @@ export function handleRead(
             visibleIds = [found.item.id];
         } else if (input.scope === "children") {
             if (found.depth === 0) {
-                return {
-                    ok: false,
-                    todos: [...todos],
-                    content: `No child todo ${input.target}.`,
-                    error: {
-                        code: "not_found",
-                        message: `No child todo ${input.target}.`,
-                    },
-                };
+                return notFound(todos, `No child todo ${input.target}.`);
             }
             visibleIds = [found.root.id, found.item.id];
         }
@@ -82,9 +69,7 @@ export function handleRead(
         : `Warning: the stored list needs fixing — ${check.error}\n${body}`;
 
     return {
-        ok: true,
-        todos: scoped,
-        content,
+        ...operationOk(scoped, content),
         ...(visibleIds === undefined ? {} : { visibleIds }),
     };
 }

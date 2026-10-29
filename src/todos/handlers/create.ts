@@ -1,40 +1,29 @@
-import type { TodoCreateOperationInput } from "../../schemas/todo/create";
-import type { TodoList, TodoRootItem } from "../../schemas/todo/item";
-import { TodoTree } from "../todo-tree";
-import { formatWriteOutput } from "./formatText";
 import {
+    OperationRejected,
     operationErr,
     operationOk,
     type TodoOperationResult,
-} from "./types";
+} from "../../schemas/rpc/error";
+import type { TodoCreateOperationInput } from "../../schemas/todo/create";
+import type { TodoList, TodoRootItem } from "../../schemas/todo/item";
+import { updateTodos } from "../../storage/todo-store";
+import { refuseIfOpen } from "../security/openguard";
+import { TodoTree } from "../todotree";
+import { formatWriteOutput } from "../utils/formatText";
+import { emitChanged, type TodoSessionRpc } from "./session-rpc";
 
 /**
  * `create`: replace the whole list with a new plan.
  *
- * Refused while anything is still open. A plan is only "finished" when every row
- * is `completed` or `cancelled`, and silently overwriting a half-done plan loses
- * the evidence trail in each row's note. The model has to close the old plan
- * first, which also keeps the TUI honest about what happened.
- *
- * The new list is validated before it is accepted: `create` is the one operation
- * that can introduce a structurally wrong list (duplicate ids, bad subtask
- * prefixes, two roots running at once), so the same validator every other path
- * uses runs here too.
+ * Refused while anything is still open, through the same guard `clear` uses, so
+ * the refusal wording never diverges between the two operations.
  */
 export function handleCreate(
     todos: TodoList,
     input: TodoCreateOperationInput,
 ): TodoOperationResult {
-    if (TodoTree.hasOpen(todos)) {
-        const open = TodoTree.openLeaves(todos);
-        const now = open[0];
-        return operationErr(
-            "list_open",
-            `Cannot create a new list: ${open.length} todo${open.length === 1 ? " is" : "s are"} still open${now ? ` (currently ${now.id} ${now.content})` : ""
-            }. Finish or cancel ${open.length === 1 ? "it" : "them"} first.`,
-            [...todos],
-        );
-    }
+    const refused = refuseIfOpen("create", todos);
+    if (refused) return refused;
 
     const check = TodoTree.validateAndNormalize(input.todos);
     if (!check.valid) {
@@ -43,4 +32,38 @@ export function handleCreate(
 
     const next: TodoRootItem[] = check.data;
     return operationOk(next, formatWriteOutput(next, todos));
+}
+
+/**
+ * Applies `create` to the stored list of a session.
+ *
+ * `rpc` is optional so the pure write path (and tests) can run without an RPC
+ * registration; when present, a committed write emits `changed`.
+ */
+export async function createSessionTodos(
+    sessionID: string,
+    input: Pick<TodoCreateOperationInput, "todos">,
+    rpc?: TodoSessionRpc,
+): Promise<TodoOperationResult> {
+    let accepted: TodoOperationResult | undefined;
+
+    try {
+        await updateTodos(sessionID, (current) => {
+            const result = handleCreate(current, {
+                operation: "create",
+                todos: input.todos,
+            });
+            if (!result.ok) throw new OperationRejected(result);
+            accepted = result;
+            return result.todos;
+        });
+    } catch (error) {
+        if (error instanceof OperationRejected) return error.result;
+        throw error;
+    }
+
+    if (!accepted) return operationErr("invalid_list", "Nothing created.", []);
+
+    if (rpc) await emitChanged(rpc, sessionID);
+    return accepted;
 }

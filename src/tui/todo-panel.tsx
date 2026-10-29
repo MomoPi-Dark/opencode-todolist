@@ -10,11 +10,12 @@ import {
 } from "solid-js";
 import { Glyph } from "../icons/glyph";
 import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/icons";
-import { Todos, watchTodos } from "../rpc";
+import { Todos, createTodoSubscription } from "../rpc";
 import type { TodoRootItem } from "../schemas/todo/item";
 import { isOpenStatus, type TodoStatus } from "../schemas/todo/status";
 import { TodoTree } from "../todos/todotree";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
+import { TodoDurations } from "../todos/utils/durations";
 import type { TodoDisplayItem, TodoDisplaySummary } from "../todos/utils/display";
 import { getTodoDisplaySummary } from "../todos/utils/display";
 import { buildTodoRows } from "../todos/utils/rows";
@@ -278,35 +279,35 @@ export function TodoProgress(props: {
 
   const [todos, setTodos] = createSignal<TodoRootItem[]>([]);
 
-  const refresh = (sid: string) => {
+  // One shared RPC path: initial read plus live `changed` events, re-bound
+  // whenever the panel's session changes.
+  let disposeSubscription: (() => void) | undefined;
+
+  createEffect(() => {
+    const sid = sessionID();
+    disposeSubscription?.();
+
     if (!sid) {
       setTodos([]);
       return;
     }
-    void context.client
-      .rpc(Todos)
-      .read({ sessionID: sid })
-      .then((res) => setTodos(res.todos))
-      .catch(() => setTodos([]));
-  };
 
-  createEffect(() => {
-    refresh(sessionID());
+    disposeSubscription = createTodoSubscription({
+      client: context.client,
+      sessionID: () => sid,
+      onChange: (next) => setTodos(next ?? []),
+      onError: () => setTodos([]),
+    });
   });
 
-  const unsubscribeRpc = watchTodos({
-    client: context.client,
-    sessionID,
-    onChange: refresh,
-  });
+  onCleanup(() => disposeSubscription?.());
 
   const [isCollapsed, setIsCollapsed] = createSignal(false);
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
   const [expandedIds, setExpandedIds] = createSignal<number[]>([]);
   const [manualRootToggles, setManualRootToggles] = createSignal<number[]>([]);
-  const taskStartTimes = new Map<number, number>();
-  const taskDurations = new Map<number, string>();
+  const tracker = new TodoDurations(Date.now, formatElapsed);
 
   const clearHover = createHover();
   const continueHover = createHover();
@@ -348,9 +349,6 @@ export function TodoProgress(props: {
   onCleanup(() => {
     try {
       unsubscribe();
-    } catch {}
-    try {
-      unsubscribeRpc();
     } catch {}
   });
 
@@ -410,31 +408,7 @@ export function TodoProgress(props: {
   const rows = createMemo<TodoListRow[]>(() => {
     if (isCollapsed()) return [];
     const items = summary()?.items ?? [];
-    const currentItemIds = new Set(items.map((i) => i.id));
-
-    for (const map of [taskStartTimes, taskDurations]) {
-      for (const id of map.keys()) {
-        if (!currentItemIds.has(id)) map.delete(id);
-      }
-    }
-
-    for (const item of items) {
-      if (item.status === "in_progress") {
-        if (!taskStartTimes.has(item.id)) {
-          taskStartTimes.set(item.id, Date.now());
-        }
-      } else if (item.status === "completed") {
-        if (taskStartTimes.has(item.id)) {
-          const duration = formatElapsed(
-            Date.now() - taskStartTimes.get(item.id)!,
-          );
-          taskDurations.set(item.id, duration);
-          taskStartTimes.delete(item.id);
-        }
-      } else {
-        taskStartTimes.delete(item.id);
-      }
-    }
+    const durations = tracker.observe(items);
 
     return buildTodoRows(items, manualRootToggles()).map(
       ({ item, expandable }): TodoListRow => ({
@@ -445,8 +419,7 @@ export function TodoProgress(props: {
         textColor: getTextColor(item.status),
         depth: item.depth,
         status: item.status,
-        elapsed:
-          item.status === "completed" ? taskDurations.get(item.id) : undefined,
+        elapsed: durations.get(item.id),
         isExpandable: expandable,
       }),
     );
@@ -487,14 +460,13 @@ export function TodoProgress(props: {
     const sid = sessionID();
     if (!sid) return;
     try {
-      taskStartTimes.clear();
-      taskDurations.clear();
       const res = await context.client.rpc(Todos).clear({ sessionID: sid });
       if (!res.ok) {
         showClearError(res.error.message || "Could not clear list.");
         return;
       }
-      refresh(sid);
+      // No manual refresh: the session handler emits `changed`, and the shared
+      // subscription reloads the list.
     } catch (error) {
       showClearError(
         (error as { message?: string })?.message ?? "Could not clear list.",

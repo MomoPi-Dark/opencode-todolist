@@ -1,6 +1,7 @@
-import type { TodoList } from "../../schemas/todo/item";
-import { TodoTree } from "../todo-tree";
-import { operationErr, type TodoOperationResult } from "./types";
+import { operationErr, TodoOperationResult } from "../../schemas/rpc/error";
+import { TodoList } from "../../schemas/todo/item";
+import { TodoTree } from "../todotree";
+import { plural } from "../utils/plural";
 
 const MAX_LISTED = 3;
 const MAX_CONTENT_SHOWN = 60;
@@ -31,14 +32,14 @@ export function refuseIfOpen(
         .slice(0, MAX_LISTED)
         .map((item) => `${item.id} "${clip(item.content)}"`)
         .join(", ");
+
     const more =
         open.length > MAX_LISTED ? `, +${open.length - MAX_LISTED} more` : "";
-    const noun = open.length === 1 ? "todo is" : "todos are";
     const target = open.length === 1 ? "it" : "each one";
 
     return operationErr(
         "list_open",
-        `Cannot ${action}: ${open.length} ${noun} still open (${shown}${more}). ` +
+        `Cannot ${action}: ${plural(open.length, "todo")} still open (${shown}${more}). ` +
         `Use "update" to set ${target} to completed or cancelled first.`,
         [...todos],
     );

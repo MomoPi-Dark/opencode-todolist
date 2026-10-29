@@ -55,6 +55,56 @@ export function watchTodos(options: WatchTodosOptions): () => void {
     });
 }
 
+export interface TodoSubscriptionOptions {
+    client: OpenCodeClient;
+    sessionID: () => string | undefined;
+    /** Called with the latest list, or `undefined` when the session is unknown. */
+    onChange: (todos: TodoRootItem[] | undefined) => void;
+    onError?: (error: unknown) => void;
+}
+
+/**
+ * One data path for both frontends: initial read, live `changed` events and
+ * cleanup. The TUI and the GUI used to each hand-roll this; keeping it in one
+ * place is what makes them behave identically.
+ */
+export function createTodoSubscription(
+    options: TodoSubscriptionOptions,
+): () => void {
+    let disposed = false;
+
+    const load = (sid: string | undefined) => {
+        if (disposed) return;
+        if (!sid) {
+            options.onChange(undefined);
+            return;
+        }
+
+        void options.client
+            .rpc(Todos)
+            .read({ sessionID: sid })
+            .then((res) => {
+                if (!disposed) options.onChange(res.ok ? res.todos : undefined);
+            })
+            .catch((error) => {
+                if (!disposed) options.onError?.(error);
+            });
+    };
+
+    load(options.sessionID());
+
+    const unwatch = watchTodos({
+        client: options.client,
+        sessionID: options.sessionID,
+        onChange: (sid) => load(sid),
+    });
+
+    return () => {
+        disposed = true;
+        unwatch();
+    };
+}
+
 export type TodoViewItem = TodoDisplayItem;
 
 export interface TodoView {

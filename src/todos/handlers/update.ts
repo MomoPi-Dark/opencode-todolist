@@ -1,49 +1,77 @@
-import type { TodoRootItem } from "../../schemas/todo/item";
-import type { TodoUpdateInput } from "../../schemas/todo/update";
+import {
+    OperationRejected,
+    operationErr,
+    operationOk,
+    type TodoOperationResult,
+} from "../../schemas/rpc/error";
+import type { TodoList } from "../../schemas/todo/item";
+import type { TodoUpdateInput, TodoUpdateItem } from "../../schemas/todo/update";
 import { updateTodos } from "../../storage/todo-store";
-import { TodoRules, type TodoRuleError } from "../rules";
-import { formatWriteOutput } from "./formatText";
+import { TodoRules } from "../security/rules";
+import { formatWriteOutput } from "../utils/formatText";
+import { emitChanged, type TodoSessionRpc } from "./session-rpc";
 
-class UpdateRejected extends Error {
-    constructor(
-        readonly rule: TodoRuleError,
-        readonly index: number,
-        readonly total: number,
-    ) {
-        super(`Update ${index + 1} of ${total} (id ${rule.id}) rejected: ${rule.message}`);
-        this.name = "UpdateRejected";
+/**
+ * `update`: apply a validated batch, in order, atomically.
+ *
+ * Every step is checked against the state left by the previous one, so a batch
+ * may finish one item and start the next in a single call.
+ */
+export function applyUpdate(
+    todos: TodoList,
+    updates: readonly TodoUpdateItem[],
+): TodoOperationResult {
+    const applied = TodoRules.apply(todos, updates);
+    if (!applied.ok) {
+        const { error, index } = applied;
+        return operationErr(
+            error.code,
+            `Update ${index + 1} of ${updates.length} (id ${error.id ?? "?"}) rejected: ${error.message}`,
+            [...todos],
+            index,
+        );
     }
+
+    return operationOk(
+        applied.todos,
+        formatWriteOutput(applied.todos, [...todos]),
+    );
 }
 
-export async function handleUpdate(sessionID: string, data: TodoUpdateInput) {
-    let before: TodoRootItem[] = [];
+/**
+ * Applies `update` to the stored list of a session.
+ *
+ * `rpc` is optional so the pure write path (and tests) can run without an RPC
+ * registration; when present, a committed write emits `changed`.
+ */
+export async function updateSessionTodos(
+    sessionID: string,
+    input: Pick<TodoUpdateInput, "updates">,
+    rpc?: TodoSessionRpc,
+): Promise<TodoOperationResult> {
+    let accepted: TodoOperationResult | undefined;
 
     try {
-        const todos = await updateTodos(sessionID, (current) => {
-            before = current;
-            const applied = TodoRules.apply(current, data.updates);
-            if (!applied.ok) {
-                throw new UpdateRejected(
-                    applied.error,
-                    applied.index,
-                    data.updates.length,
-                );
-            }
-            return applied.todos;
+        await updateTodos(sessionID, (current) => {
+            const result = applyUpdate(current, input.updates);
+            if (!result.ok) throw new OperationRejected(result);
+            accepted = result;
+            return result.todos;
         });
-
-        return {
-            ok: true as const,
-            todos,
-            content: formatWriteOutput(todos, before),
-        };
     } catch (error) {
-        if (!(error instanceof UpdateRejected)) throw error;
-        return {
-            ok: false as const,
-            code: error.rule.code,
-            message: error.message,
-            todos: before,
-        };
+        if (error instanceof OperationRejected) return error.result;
+        throw error;
     }
+
+    if (!accepted) return operationErr("not_found", "Nothing updated.", []);
+
+    if (rpc) await emitChanged(rpc, sessionID);
+    return accepted;
 }
+
+/** Session-level name kept for callers that pass the full operation input. */
+export const handleUpdate = (
+    sessionID: string,
+    input: TodoUpdateInput,
+    rpc?: TodoSessionRpc,
+) => updateSessionTodos(sessionID, input, rpc);

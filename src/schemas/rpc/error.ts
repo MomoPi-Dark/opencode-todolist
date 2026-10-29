@@ -1,5 +1,4 @@
 import z from "zod";
-import type { TodoRuleCode } from "../../todos/security/rules";
 import type { TodoRootItem } from "../todo/item";
 
 export const TodoRuleCodeSchema = z.enum([
@@ -30,6 +29,12 @@ export const TodoOperationCodeSchema = z.union([
 ]);
 
 export type TodoOperationCode = z.infer<typeof TodoOperationCodeSchema>;
+
+/**
+ * The domain-facing name for the rule subset. Derived, never redeclared, so a
+ * rule added here is automatically valid in `TodoOperationCodeSchema` too.
+ */
+export type TodoRuleCode = z.infer<typeof TodoRuleCodeSchema>;
 
 export const TodoOperationErrorSchema = z.object({
     code: TodoOperationCodeSchema,

@@ -3,6 +3,7 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import { Todos, type TodoView, type TodoViewItem } from "../rpc";
 import { isOpenStatus } from "../schemas/todo/status";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
+import { TodoDurations } from "../todos/utils/durations";
 import { buildTodoRows } from "../todos/utils/rows";
 
 const STATUS_ICON = {
@@ -45,33 +46,14 @@ export function TodoPanel(props: Props) {
   const [expanded, setExpanded] = createSignal<readonly number[]>([]);
   const [manual, setManual] = createSignal<readonly number[]>([]);
 
-  const starts = new Map<number, number>();
-  const durations = new Map<number, string>();
-
   const items = () => props.view()?.items ?? [];
   const hasOpen = () => items().some((item) => isOpenStatus(item.status));
 
+  const tracker = new TodoDurations(Date.now, formatElapsed);
+
   const rows = createMemo<Row[]>(() => {
     const list = items();
-    const alive = new Set(list.map((item) => item.id));
-
-    for (const map of [starts, durations]) {
-      for (const id of map.keys()) if (!alive.has(id)) map.delete(id);
-    }
-
-    for (const item of list) {
-      if (item.status === "in_progress") {
-        if (!starts.has(item.id)) starts.set(item.id, Date.now());
-      } else if (item.status === "completed") {
-        const started = starts.get(item.id);
-        if (started !== undefined) {
-          durations.set(item.id, formatElapsed(Date.now() - started));
-          starts.delete(item.id);
-        }
-      } else {
-        starts.delete(item.id);
-      }
-    }
+    const durations = tracker.observe(list);
 
     return buildTodoRows(list, manual()).map((row) => ({
       ...row,
