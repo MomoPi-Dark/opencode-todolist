@@ -124,8 +124,8 @@ describe("cost of tool output (per call)", () => {
     const contentOf = (result: {
         ok: boolean;
         content?: string;
-        message?: string;
-    }) => (result.ok ? (result.content as string) : (result.message as string));
+        error?: { message: string };
+    }) => (result.ok ? (result.content as string) : (result.error?.message as string));
 
     const sessionID = "budget-session";
     let testDir = "";

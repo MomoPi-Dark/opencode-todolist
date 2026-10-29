@@ -83,7 +83,7 @@ describe("handleCreate", () => {
         const current = [root(1, { status: "in_progress" })];
         const result = handleCreate(current, { operation: "create", todos: [root(1)] });
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.code).toBe("list_open");
+        if (!result.ok) expect(result.error.code).toBe("list_open");
         expect(result.todos).toEqual(current);
     });
 });
@@ -99,6 +99,6 @@ describe("handleClear", () => {
         const current = [root(1, { status: "completed", children: [child(1.1)] })];
         const result = handleClear(current);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.code).toBe("list_open");
+        if (!result.ok) expect(result.error.code).toBe("list_open");
     });
 });

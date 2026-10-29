@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { TodoRootItem } from "../../src/schemas/todo/item";
 import { handleClear } from "../../src/todos/handlers/clear";
 import { handleCreate } from "../../src/todos/handlers/create";
-import { toToolResult, type TodoOperationResult } from "../../src/todos/handlers/types";
+import { toToolResult, type TodoOperationResult } from "../../src/schemas/rpc/error";
 
 const todos: TodoRootItem[] = [
     { id: 1, content: "Task", status: "pending" },
@@ -12,9 +12,11 @@ describe("toToolResult", () => {
     test("converts refused handler results to a valid tool result", () => {
         const result: TodoOperationResult = {
             ok: false,
-            code: "list_open",
-            message: "Finish the current todo first.",
             todos,
+            error: {
+                code: "list_open",
+                message: "Finish the current todo first.",
+            },
         };
 
         expect(toToolResult(result)).toEqual({

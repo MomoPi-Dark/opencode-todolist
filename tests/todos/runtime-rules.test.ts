@@ -35,7 +35,7 @@ describe("runtime update rules", () => {
         });
 
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.code).toBe("backward_transition");
+        if (!result.ok) expect(result.error.code).toBe("backward_transition");
         expect(await readTodos("session-a")).toEqual(current);
     });
 });

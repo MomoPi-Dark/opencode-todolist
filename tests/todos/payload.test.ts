@@ -38,14 +38,14 @@ const tok = (text: string) => Math.ceil(text.length / 3.6);
 interface Payload {
     ok: boolean;
     content?: string;
-    message?: string;
+    error?: { message: string };
     todos: TodoRootItem[];
 }
 
 /** Total cost a model pays for one tool call: text plus structured rows. */
 const payload = (result: Payload) => ({
     content: tok(
-        result.ok ? (result.content as string) : (result.message as string),
+        result.ok ? (result.content as string) : (result.error?.message as string),
     ),
     structured: tok(JSON.stringify(result.todos)),
     get total() {
