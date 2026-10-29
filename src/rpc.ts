@@ -1,8 +1,9 @@
 import type { OpenCodeClient } from "@opencode/client";
 import { Rpc } from "@opencode/plugin/rpc";
 import type { TodoRootItem } from "./schemas/todo/item";
-import type { TodoStatus } from "./schemas/todo/status";
+import type { TodoDisplayItem } from "./todos/utils/display";
 import { TodoTree } from "./todos/todotree";
+import { getStatusIcon } from "./todos/utils/display";
 import {
     SessionIdSchema,
     TodoRpcClearInputSchema,
@@ -54,13 +55,7 @@ export function watchTodos(options: WatchTodosOptions): () => void {
     });
 }
 
-export interface TodoViewItem {
-    id: number;
-    content: string;
-    status: TodoStatus;
-    depth: number;
-    note?: string;
-}
+export type TodoViewItem = TodoDisplayItem;
 
 export interface TodoView {
     completed: number;
@@ -77,6 +72,7 @@ export function toTodoView(todos: TodoRootItem[]): TodoView {
         items.push({
             id: parent.id,
             content: parent.content,
+            icon: getStatusIcon(parent.status),
             status: parent.status,
             depth: 0,
             ...(parent.note ? { note: parent.note } : {}),
@@ -85,6 +81,7 @@ export function toTodoView(todos: TodoRootItem[]): TodoView {
             items.push({
                 id: child.id,
                 content: child.content,
+                icon: getStatusIcon(child.status),
                 status: child.status,
                 depth: 1,
                 ...(child.note ? { note: child.note } : {}),

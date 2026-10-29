@@ -15,8 +15,9 @@ import type { TodoRootItem } from "../schemas/todo/item";
 import { isOpenStatus, type TodoStatus } from "../schemas/todo/status";
 import { TodoTree } from "../todos/todotree";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
-import type { TodoDisplaySummary } from "../todos/utils/display";
+import type { TodoDisplayItem, TodoDisplaySummary } from "../todos/utils/display";
 import { getTodoDisplaySummary } from "../todos/utils/display";
+import { buildTodoRows } from "../todos/utils/rows";
 import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "./layout";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -437,47 +438,20 @@ export function TodoProgress(props: {
       }
     }
 
-    const rootHasChildren = new Map<number, boolean>();
-    let curRoot: number | undefined;
-    for (const item of items) {
-      if (item.depth === 0) {
-        curRoot = item.id;
-        rootHasChildren.set(item.id, false);
-      } else if (curRoot !== undefined) {
-        rootHasChildren.set(curRoot, true);
-      }
-    }
-
-    const result: TodoListRow[] = [];
-    let skipChildrenRootId: number | undefined;
-
-    for (const item of items) {
-      let hasChildren = false;
-
-      if (item.depth === 0) {
-        hasChildren = rootHasChildren.get(item.id) ?? false;
-        const defaultCollapsed = item.status === "completed" && hasChildren;
-        const isToggled = manualRootToggles().includes(item.id);
-        const collapsed = isToggled ? !defaultCollapsed : defaultCollapsed;
-        skipChildrenRootId = collapsed && hasChildren ? item.id : undefined;
-      } else if (skipChildrenRootId !== undefined) {
-        continue;
-      }
-
-      result.push({
+    return buildTodoRows(items, manualRootToggles()).map(
+      ({ item, expandable }): TodoListRow => ({
         id: item.id,
         content: item.content,
-        icon: item.icon,
+        icon: (item as TodoDisplayItem).icon,
         iconColor: getStatusColor(item.status),
         textColor: getTextColor(item.status),
         depth: item.depth,
         status: item.status,
         elapsed:
           item.status === "completed" ? taskDurations.get(item.id) : undefined,
-        isExpandable: hasChildren,
-      });
-    }
-    return result;
+        isExpandable: expandable,
+      }),
+    );
   });
 
   // Actions

@@ -1,7 +1,9 @@
 import { usePlugin } from "@opencode/plugin/gui";
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { Todos, type TodoView, type TodoViewItem } from "../rpc";
+import { isOpenStatus } from "../schemas/todo/status";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
+import { buildTodoRows } from "../todos/utils/rows";
 
 const STATUS_ICON = {
   pending: "dash",
@@ -24,25 +26,14 @@ const STATUS_COLOR: Record<TodoViewItem["status"], string> = {
   error: DANGER,
 };
 
-const OPEN_STATUSES: ReadonlySet<TodoViewItem["status"]> = new Set([
-  "pending",
-  "in_progress",
-  "error",
-]);
-
-interface Row {
-  item: TodoViewItem;
-  elapsed?: string;
-  expandable: boolean;
-  collapsed: boolean;
-}
-
 interface Props {
   sessionID: () => string;
   view: () => TodoView | undefined;
   busy: () => boolean;
   onRefresh: () => void;
 }
+
+type Row = ReturnType<typeof buildTodoRows>[number] & { elapsed?: string };
 
 const toggled = (list: readonly number[], id: number): readonly number[] =>
   list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
@@ -58,7 +49,7 @@ export function TodoPanel(props: Props) {
   const durations = new Map<number, string>();
 
   const items = () => props.view()?.items ?? [];
-  const hasOpen = () => items().some((item) => OPEN_STATUSES.has(item.status));
+  const hasOpen = () => items().some((item) => isOpenStatus(item.status));
 
   const rows = createMemo<Row[]>(() => {
     const list = items();
@@ -82,40 +73,10 @@ export function TodoPanel(props: Props) {
       }
     }
 
-    const parents = new Set<number>();
-    let root: number | undefined;
-    for (const item of list) {
-      if (item.depth === 0) root = item.id;
-      else if (root !== undefined) parents.add(root);
-    }
-
-    const out: Row[] = [];
-    let skip: number | undefined;
-
-    for (const item of list) {
-      let expandable = false;
-      let collapsed = false;
-
-      if (item.depth === 0) {
-        expandable = parents.has(item.id);
-        const defaultCollapsed = item.status === "completed" && expandable;
-        collapsed = manual().includes(item.id)
-          ? !defaultCollapsed
-          : defaultCollapsed;
-        skip = collapsed && expandable ? item.id : undefined;
-      } else if (skip !== undefined) {
-        continue;
-      }
-
-      out.push({
-        item,
-        expandable,
-        collapsed,
-        elapsed: durations.get(item.id),
-      });
-    }
-
-    return out;
+    return buildTodoRows(list, manual()).map((row) => ({
+      ...row,
+      elapsed: durations.get(row.item.id),
+    }));
   });
 
   const continueTodos = () => {
