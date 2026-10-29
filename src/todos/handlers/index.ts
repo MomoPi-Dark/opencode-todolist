@@ -69,7 +69,7 @@ export async function runOperation(
                     parseOutput(
                         await rpc.clear({
                             sessionID,
-                            confirm: data.confirm,
+                            guard: "guard",
                         }),
                     ),
                 ),

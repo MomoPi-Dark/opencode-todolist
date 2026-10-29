@@ -12,20 +12,10 @@ import {
 import type { TodoSessionRpc } from "./todos/handlers/session-rpc";
 import { registerTodoPromptHook } from "./todos/utils/hint";
 
-/**
- * Registers the todo RPC.
- *
- * The handlers need the registration to emit `changed`, but the registration
- * does not exist until `register` resolves. A mutable holder is initialised in
- * the same tick, and the handlers only run after this function returns, so the
- * holder is always populated by the time it is read — no cast, no fake context.
- */
 async function registerTodoRpc(ctx: Plugin.Context) {
     const holder: { rpc?: TodoSessionRpc } = {};
 
     const registration = await ctx.rpc.register(Todos, {
-        // The session handlers own emission: a handler that mutates the list
-        // emits `changed` itself once the write is committed.
         read: (input) => readSessionTodos(input.sessionID, input),
         create: (input) => {
             if (!holder.rpc) throw new Error("todo rpc not ready");
@@ -37,11 +27,10 @@ async function registerTodoRpc(ctx: Plugin.Context) {
         },
         clear: (input) => {
             if (!holder.rpc) throw new Error("todo rpc not ready");
-            return clearSessionTodos(
-                input.sessionID,
-                holder.rpc,
-                input.force === true,
-            );
+            return clearSessionTodos(input.sessionID, {
+                guard: input.guard,
+                rpc: holder.rpc,
+            });
         },
     });
 

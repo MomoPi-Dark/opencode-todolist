@@ -450,7 +450,7 @@ export function TodoProgress(props: {
         sessionID: sid,
         // The user confirmed in the dialog above; the open-list guard is for the
         // tool, where a model could erase a half-done plan on its own.
-        force: true,
+        guard: "disable",
       });
       if (!res.ok) {
         showClearError(res.error.message || "Could not clear list.");

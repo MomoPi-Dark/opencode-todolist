@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TodoChildren, TodoRootItem } from "../../src/schemas/todo/item";
-import { TodoTree } from "../../src/todos/todo-tree";
+import { TodoTree } from "../../src/todos/todotree";
 
 const child = (
     id: number,

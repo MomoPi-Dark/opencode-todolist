@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TodoChildren, TodoRootItem } from "../../src/schemas/todo/item";
 import type { TodoUpdateItem } from "../../src/schemas/todo/update";
-import { TodoRules, type TodoRuleCode } from "../../src/todos/rules";
+import { TodoRules, type TodoRuleCode } from "../../src/todos/security/rules";
 
 const child = (
     id: number,

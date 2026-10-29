@@ -7,16 +7,22 @@ const open: TodoRootItem[] = [
     { id: 2, content: "Not started", status: "pending" },
 ];
 
+const clear = (
+    todos: TodoRootItem[],
+    guard: "guard" | "disable",
+    sessionID = "ses_1",
+) => handleClear(todos, { guard, sessionID });
+
 describe("handleClear", () => {
-    test("refuses while anything is open, by default", () => {
-        const result = handleClear(open);
+    test("guard refuses while anything is open", () => {
+        const result = clear(open, "guard");
 
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error.code).toBe("list_open");
     });
 
-    test("force clears an open list: the user already confirmed", () => {
-        const result = handleClear(open, { force: true });
+    test("disable clears an open list: the user already confirmed", () => {
+        const result = clear(open, "disable");
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -25,7 +31,7 @@ describe("handleClear", () => {
         }
     });
 
-    test("force still reports the removed counts", () => {
+    test("disable still reports the removed counts", () => {
         const withChild: TodoRootItem[] = [
             {
                 id: 1,
@@ -35,22 +41,22 @@ describe("handleClear", () => {
             },
         ];
 
-        const result = handleClear(withChild, { force: true });
+        const result = clear(withChild, "disable");
 
         expect(result.ok).toBe(true);
         if (result.ok) expect(result.content).toContain("subtask");
     });
 
-    test("clearing an empty list succeeds either way", () => {
-        expect(handleClear([], {}).ok).toBe(true);
-        expect(handleClear([], { force: true }).ok).toBe(true);
+    test("clearing an empty list succeeds under either guard", () => {
+        expect(clear([], "guard").ok).toBe(true);
+        expect(clear([], "disable").ok).toBe(true);
     });
 
-    test("a finished list clears without force", () => {
+    test("a finished list clears with the guard on", () => {
         const done: TodoRootItem[] = [
             { id: 1, content: "Done", status: "completed" },
         ];
 
-        expect(handleClear(done).ok).toBe(true);
+        expect(clear(done, "guard").ok).toBe(true);
     });
 });

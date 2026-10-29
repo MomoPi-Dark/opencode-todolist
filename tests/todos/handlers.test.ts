@@ -65,7 +65,7 @@ describe("handleRead", () => {
     test("refuses an unknown target", () => {
         const result = handleRead([root(1)], read({ scope: "root", target: 9 }));
         expect(result.ok).toBe(false);
-        expect(result.content).toBe("No todo 9.");
+        if (!result.ok) expect(result.error.message).toBe("No todo 9.");
     });
 });
 
@@ -90,14 +90,14 @@ describe("handleCreate", () => {
 
 describe("handleClear", () => {
     test("clears a finished list", () => {
-        const result = success(handleClear([root(1, { status: "completed" })]));
+        const result = success(handleClear([root(1, { status: "completed" })], { guard: "guard", sessionID: "ses_1" }));
         expect(result.todos).toEqual([]);
         expect(result.content).toBe("Cleared 1 todo.");
     });
 
     test("refuses while a child is open", () => {
         const current = [root(1, { status: "completed", children: [child(1.1)] })];
-        const result = handleClear(current);
+        const result = handleClear(current, { guard: "guard", sessionID: "ses_1" });
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error.code).toBe("list_open");
     });

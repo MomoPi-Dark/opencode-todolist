@@ -4,24 +4,15 @@ import {
     operationOk,
     type TodoOperationResult,
 } from "../../schemas/rpc/error";
-import type { TodoClearOperationInput } from "../../schemas/todo/clear";
+import {
+    TodoRpcClearInput,
+    TodoRpcClearInputGuard,
+} from "../../schemas/rpc/input";
 import type { TodoList } from "../../schemas/todo/item";
 import { updateTodos } from "../../storage/todo-store";
 import { refuseIfOpen } from "../security/openguard";
 import { plural } from "../utils/plural";
 import { emitChanged, type TodoSessionRpc } from "./session-rpc";
-
-/**
- * What `handleClear` needs beyond the list.
- *
- * Deliberately **not** `TodoClearOperationInput`: `force` is not part of the tool
- * contract. It exists so the desktop and TUI, where the user confirmed through a
- * dialog or a keybind they pressed themselves, can clear a list that still has
- * open todos. A model never sends it, so it cannot erase a half-done plan.
- */
-export interface ClearOptions {
-    readonly force?: boolean;
-}
 
 /**
  * `clear`: drop the whole list.
@@ -32,9 +23,9 @@ export interface ClearOptions {
  */
 export function handleClear(
     todos: TodoList,
-    options?: ClearOptions,
+    input: TodoRpcClearInput,
 ): TodoOperationResult {
-    if (!options?.force) {
+    if (input.guard === "guard") {
         const refused = refuseIfOpen("clear", todos);
         if (refused) return refused;
     }
@@ -56,23 +47,15 @@ export function handleClear(
     return operationOk([], `Cleared ${removed}.`);
 }
 
-/**
- * Clears the stored list of a session.
- *
- * `rpc` is optional so the pure write path (and tests) can run without an RPC
- * registration; when present, a committed write emits `changed`. `force` is
- * passed through from the RPC input.
- */
 export async function clearSessionTodos(
     sessionID: string,
-    rpc?: TodoSessionRpc,
-    force = false,
+    options: { guard: TodoRpcClearInputGuard; rpc?: TodoSessionRpc },
 ): Promise<TodoOperationResult> {
     let accepted: TodoOperationResult | undefined;
 
     try {
         await updateTodos(sessionID, (current) => {
-            const result = handleClear(current, { force });
+            const result = handleClear(current, { guard: options.guard, sessionID });
             if (!result.ok) throw new OperationRejected(result);
             accepted = result;
             return result.todos;
@@ -82,8 +65,13 @@ export async function clearSessionTodos(
         throw error;
     }
 
-    if (!accepted) return operationErr("not_found", "Nothing cleared.", []);
+    if (!accepted)
+        return operationErr({
+            code: "not_found",
+            message: "Nothing cleared.",
+            todos: [],
+        });
+    if (options.rpc) await emitChanged(options.rpc, sessionID);
 
-    if (rpc) await emitChanged(rpc, sessionID);
     return accepted;
 }

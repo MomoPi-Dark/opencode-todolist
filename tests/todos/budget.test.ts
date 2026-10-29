@@ -224,7 +224,7 @@ describe("cost of tool output (per call)", () => {
         budget(
             "clear",
             contentOf(
-                handleClear([{ id: 1, content: "x", status: "completed" }]),
+                handleClear([{ id: 1, content: "x", status: "completed" }], { guard: "guard", sessionID: "ses_1" }),
             ),
             10,
         );

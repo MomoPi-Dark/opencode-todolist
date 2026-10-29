@@ -27,7 +27,7 @@ describe("toToolResult", () => {
     });
 
     test("handlers return tool results without an index adapter", () => {
-        expect(toToolResult(handleClear([{ id: 1, content: "Task", status: "completed" }]))).toEqual({
+        expect(toToolResult(handleClear([{ id: 1, content: "Task", status: "completed" }], { guard: "guard", sessionID: "ses_1" }))).toEqual({
             output: { todos: [] },
             content: "Cleared 1 todo.",
         });

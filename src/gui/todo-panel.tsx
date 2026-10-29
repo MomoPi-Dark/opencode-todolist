@@ -73,18 +73,18 @@ export function TodoPanel(props: Props) {
     try {
       const res = await ctx.client.rpc(Todos).clear({
         sessionID,
-        // The user confirmed in the dialog above and owns the data, so the
-        // open-list guard does not apply here.
-        force: true,
+        guard: "disable",
       });
       if (!res.ok) {
-        await showClearError(res.error.message || "Unknown error.");
+        ctx.toast.show({
+          title: "Todo clear",
+          description: res.error.message,
+        });
         return;
       }
     } catch (error) {
-      await showClearError(
-        (error as { message?: string }).message ?? "Unknown error.",
-      );
+      const err = (error as { message?: string }).message ?? "Unknown error.";
+      ctx.toast.show({ title: "Todo clear", description: err });
       return;
     }
 

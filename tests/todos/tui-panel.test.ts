@@ -1,18 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import type { TodoDisplaySummary } from "../../src/todos/display";
+import { continuePrompt, shorten } from "../../src/todos/utils/continue-prompt";
+import type { TodoDisplaySummary } from "../../src/todos/utils/display";
+import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "../../src/tui/layout";
 import {
-  ContinuePrompt,
   FindActiveEntryIndex,
   NextFollowScrollTop,
   TodoListEntries,
   type TodoListRow,
 } from "../../src/tui/todo-panel";
-import {
-  ERROR_PREFIX,
-  ErrorRowWidth,
-  RowWidth,
-} from "../../src/tui/layout";
-import { shorten } from "../../src/tui/text";
 
 const row = (overrides: Partial<TodoListRow> = {}): TodoListRow => ({
   id: 1,
@@ -82,13 +77,19 @@ describe("Continue prompt", () => {
       { id: 1, content: "Storage", icon: "○", status: "in_progress", depth: 0 },
       { id: 1.1, content: "schema", icon: "✓", status: "completed", depth: 1 },
       { id: 1.2, content: "store", icon: "○", status: "in_progress", depth: 1 },
-      { id: 2, content: "Wire the tool", icon: "○", status: "pending", depth: 0 },
+      {
+        id: 2,
+        content: "Wire the tool",
+        icon: "○",
+        status: "pending",
+        depth: 0,
+      },
       { id: 3, content: "Verify", icon: "○", status: "pending", depth: 0 },
     ],
   };
 
   test("lists progress and open items, collapsing excess rows", () => {
-    const prompt = ContinuePrompt(summary);
+    const prompt = continuePrompt(summary);
 
     expect(prompt).toContain("Progress: 1/4 completed.");
     expect(prompt).toContain("- 1 (currently being worked on) Storage");
@@ -98,7 +99,7 @@ describe("Continue prompt", () => {
   });
 
   test("handles a missing list without claiming it contains open items", () => {
-    expect(ContinuePrompt(null)).toContain("No open items are listed.");
+    expect(continuePrompt(null)).toContain("No open items are listed.");
   });
 });
 
