@@ -5,10 +5,9 @@ import {
   MenuItem,
   Panel,
   Plugin,
-  Slot,
   type PanelTab,
 } from "@opencode/plugin/gui";
-import { createEffect, Show } from "solid-js";
+import { createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
 import { TodoPanel } from "./gui/todo-panel";
 import {
@@ -43,13 +42,10 @@ export default Plugin.define({
         .catch(() => {});
     };
 
-    /** Re-binds the shared RPC subscription to the given session. */
     const subscribeTodos = (sessionID: string) => {
       subscription?.dispose();
       subscription = createTodoSubscription(
         {
-          // The ref is absent before the app interface mounts; the subscription
-          // reports the miss through `onError` rather than asserting it exists.
           client: () => {
             const current = server();
             if (!current) throw new Error("todo panel: no server ref");
@@ -73,21 +69,14 @@ export default Plugin.define({
 
     createKeyed(() => ctx.sessions.current()?.id, refresh);
 
-    // Subscriptions are live only: events emitted while the connection was down
-    // are lost, so a reconnect must re-read. The first `connected` observation is
-    // skipped because `subscribeTodos` already performed the initial read.
     let seenConnected: boolean | undefined;
-
     createEffect(() => {
       const current = server();
       const connected = current?.connected === true;
-
       const wasConnected = seenConnected;
       seenConnected = connected;
-
       if (wasConnected === undefined) return;
       if (!connected || wasConnected) return;
-
       subscription?.refresh();
     });
 
@@ -122,13 +111,18 @@ export default Plugin.define({
         const view = views[input.session.id];
         if (!view || view.items.length === 0) return undefined;
 
+        const label = `Todos ${view.completed}/${view.total}`;
+
         const open = view.items.filter((item) =>
           isOpenStatus(item.status),
         ).length;
         const active = view.items.find((item) => item.status === "in_progress");
+        const activeContent = busy[input.session.id]
+          ? (active?.content ?? "")
+          : "";
 
         return {
-          label: `Todos ${view.completed}/${view.total}`,
+          label: `${label} ${activeContent}`,
           icon: "checklist",
           tone: view.items.some((item) => item.status === "error")
             ? "danger"
@@ -141,62 +135,6 @@ export default Plugin.define({
       },
     });
 
-    const currentView = () => {
-      const id = ctx.sessions.current()?.id;
-      return id ? views[id] : undefined;
-    };
-
-    ctx.add(Slot, {
-      at: "window.bottom",
-      order: 90,
-      render: () => (
-        <Show when={currentView()}>
-          {(view) => (
-            <div
-              onClick={toggle}
-              style={{
-                display: "flex",
-                "align-items": "center",
-                gap: "8px",
-                width: "100%",
-                padding: "2px 12px",
-                "font-size": "var(--font-size-small)",
-                cursor: "pointer",
-              }}
-            >
-              <span
-                style={{
-                  display: "flex",
-                  "flex-shrink": 0,
-                  color: "var(--v2-icon-icon-muted)",
-                }}
-              >
-                <ctx.ui.Icon name="checklist" size="small" />
-              </span>
-              <span
-                style={{ "flex-shrink": 0, color: "var(--v2-text-text-muted)" }}
-              >
-                Todos {view().completed}/{view().total}
-              </span>
-              <span
-                style={{
-                  flex: 1,
-                  "min-width": 0,
-                  overflow: "hidden",
-                  "text-overflow": "ellipsis",
-                  "white-space": "nowrap",
-                  color: "var(--v2-text-text-base)",
-                }}
-              >
-                {view().items.find((item) => item.status === "in_progress")
-                  ?.content ?? ""}
-              </span>
-            </div>
-          )}
-        </Show>
-      ),
-    });
-
     ctx.add(
       Command,
       (): Command => ({
@@ -205,6 +143,8 @@ export default Plugin.define({
         keywords: "todo todolist checklist",
         group: "Session",
         section: "session",
+        // The real binding lives here. The menu item below only shows it.
+        bind: "mod+shift+t",
         enabled: !!ctx.sessions.current(),
         run: toggle,
       }),
@@ -213,13 +153,21 @@ export default Plugin.define({
     ctx.add(MenuItem, (): MenuItem => {
       const session = ctx.sessions.current();
 
+      const view = session ? views[session?.id] : undefined;
+
       return {
         menu: "session.panel",
         id: "todos",
         title: "Todos",
+        description: view
+          ? `You have todos ${view.completed}/${view.total}`
+          : undefined,
         icon: "checklist",
         opened: !!session && ctx.layout.state(panelKey, session) !== "closed",
         run: toggle,
+        // `keybind` is a published command id, not a chord: the menu resolves it
+        // to whatever shortcut the user has configured.
+        keybind: `${ctx.id}.toggle`,
       };
     });
 
