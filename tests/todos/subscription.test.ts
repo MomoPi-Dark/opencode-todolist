@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { TodoRootItem } from "../../src/schemas/todo/item";
 import { createTodoSubscription, type TodoClient } from "../../src/rpc";
 
-/**
- * `createTodoSubscription` only calls `client.rpc(Def)` and then `.read` /
- * `.events.on`. `TodoClient` is `Pick<OpenCodeClient, "rpc">`, but the definition
- * argument is typed against the real `Todos` schema, so the stub is asserted once
- * here instead of at every call site.
- */
-const stubClient = (read: () => Promise<unknown>, on: () => () => void): TodoClient =>
+/** The client is only dereferenced through `rpc(Def).read` / `.events.on`. */
+const stubClient = (
+    read: () => Promise<unknown>,
+    on: () => () => void,
+): TodoClient =>
     ({
         rpc: () => ({ read, events: { on } }),
     }) as unknown as TodoClient;
@@ -50,11 +48,12 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe("createTodoSubscription", () => {
     test("dereferences the client on every call, so a replaced client is used", async () => {
         const harness = makeHarness();
-        const sub = createTodoSubscription({
-            client: () => harness.current,
-            sessionID: () => "session-1",
-            onChange: () => {},
-        });
+        const events: string[] = [];
+
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => "session-1" },
+            { onData: () => events.push("data") },
+        );
 
         await flush();
         expect(harness.reads).toEqual(["A"]);
@@ -64,16 +63,17 @@ describe("createTodoSubscription", () => {
         await flush();
 
         expect(harness.reads.at(-1)).toBe("B");
+        expect(events.length).toBeGreaterThanOrEqual(2);
         sub.dispose();
     });
 
     test("the previous listener is unsubscribed on refresh", () => {
         const harness = makeHarness();
-        const sub = createTodoSubscription({
-            client: () => harness.current,
-            sessionID: () => "session-1",
-            onChange: () => {},
-        });
+
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => "session-1" },
+            { onData: () => {} },
+        );
 
         expect(harness.unsubscribed).toEqual([false]);
         sub.refresh();
@@ -84,15 +84,14 @@ describe("createTodoSubscription", () => {
         expect(harness.unsubscribed[1]).toBe(true);
     });
 
-    test("no read happens and onChange reports undefined when the session is unknown", () => {
+    test("an unknown session reports undefined once and never reads", () => {
         const harness = makeHarness();
         const seen: Array<TodoRootItem[] | undefined> = [];
 
-        const sub = createTodoSubscription({
-            client: () => harness.current,
-            sessionID: () => undefined,
-            onChange: (todos) => seen.push(todos),
-        });
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => undefined },
+            { onData: (todos) => seen.push(todos) },
+        );
 
         expect(seen).toEqual([undefined]);
         expect(harness.reads).toEqual([]);
@@ -101,18 +100,74 @@ describe("createTodoSubscription", () => {
 
     test("refresh after dispose does nothing", async () => {
         const harness = makeHarness();
-        const sub = createTodoSubscription({
-            client: () => harness.current,
-            sessionID: () => "session-1",
-            onChange: () => {},
-        });
+        let calls = 0;
+
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => "session-1" },
+            { onData: () => calls++ },
+        );
 
         sub.dispose();
         const readsBefore = harness.reads.length;
+        const callsBefore = calls;
         sub.refresh();
         await flush();
 
         expect(harness.reads).toHaveLength(readsBefore);
+        expect(calls).toBe(callsBefore);
         expect(harness.unsubscribed).toHaveLength(1);
+    });
+
+    test("a reply that lands after dispose never reaches onData", async () => {
+        const harness = makeHarness();
+        let resolveRead: (value: unknown) => void = () => {};
+        const pending = new Promise((resolve) => {
+            resolveRead = resolve;
+        });
+        let calls = 0;
+
+        harness.current = stubClient(
+            () => {
+                harness.reads.push("slow");
+                return pending;
+            },
+            () => () => {},
+        );
+
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => "session-1" },
+            { onData: () => calls++ },
+        );
+
+        // The read is still in flight; disposing must silence its result.
+        sub.dispose();
+        resolveRead({ ok: true, todos: [] });
+        await flush();
+
+        expect(calls).toBe(0);
+    });
+
+    test("a failed read goes to onError, not onData", async () => {
+        const harness = makeHarness();
+        const errors: unknown[] = [];
+        let dataCalls = 0;
+
+        harness.current = stubClient(
+            async () => {
+                throw new Error("boom");
+            },
+            () => () => {},
+        );
+
+        const sub = createTodoSubscription(
+            { client: () => harness.current, sessionID: () => "session-1" },
+            { onData: () => dataCalls++, onError: (error) => errors.push(error) },
+        );
+
+        await flush();
+
+        expect(errors).toHaveLength(1);
+        expect(dataCalls).toBe(0);
+        sub.dispose();
     });
 });

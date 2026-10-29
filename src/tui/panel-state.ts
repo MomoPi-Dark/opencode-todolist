@@ -72,12 +72,13 @@ export function createPanelState(options: PanelStateOptions): PanelState {
       return;
     }
 
-    subscription = createTodoSubscription({
-      client: () => context.client,
-      sessionID: () => sid,
-      onChange: (next) => setTodos(next ?? []),
-      onError: () => setTodos([]),
-    });
+    subscription = createTodoSubscription(
+      { client: () => context.client, sessionID: () => sid },
+      {
+        onData: (next) => setTodos(next ?? []),
+        onError: () => setTodos([]),
+      },
+    );
   });
 
   onCleanup(() => subscription?.dispose());

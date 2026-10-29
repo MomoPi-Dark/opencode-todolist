@@ -8,7 +8,7 @@ import {
   Slot,
   type PanelTab,
 } from "@opencode/plugin/gui";
-import { Show, createEffect } from "solid-js";
+import { createEffect, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { TodoPanel } from "./gui/todo-panel";
 import {
@@ -22,6 +22,7 @@ import { isOpenStatus } from "./schemas/todo/status";
 export default Plugin.define({
   setup(ctx) {
     const panelKey = `${ctx.id}:todos`;
+
     const [views, setViews] = createStore<Record<string, TodoView | undefined>>(
       {},
     );
@@ -29,11 +30,6 @@ export default Plugin.define({
 
     let subscription: TodoSubscription | undefined;
 
-    /**
-     * The app's own server, resolved reactively. Reading `client` through the
-     * server ref (instead of capturing `ctx.client`) is what keeps calls working
-     * after the server restarts.
-     */
     const server = () =>
       ctx.servers
         .list()
@@ -50,20 +46,24 @@ export default Plugin.define({
     /** Re-binds the shared RPC subscription to the given session. */
     const subscribeTodos = (sessionID: string) => {
       subscription?.dispose();
-      subscription = createTodoSubscription({
-        // The ref is absent before the app interface mounts; the subscription
-        // reports the miss through `onError` rather than asserting it exists.
-        client: () => {
-          const current = server();
-          if (!current) throw new Error("todo panel: no server ref");
-          return current.client;
+      subscription = createTodoSubscription(
+        {
+          // The ref is absent before the app interface mounts; the subscription
+          // reports the miss through `onError` rather than asserting it exists.
+          client: () => {
+            const current = server();
+            if (!current) throw new Error("todo panel: no server ref");
+            return current.client;
+          },
+          sessionID: () => sessionID,
         },
-        sessionID: () => sessionID,
-        onChange: (todos) => {
-          setViews(sessionID, todos ? toTodoView(todos) : undefined);
+        {
+          onData: (todos) => {
+            setViews(sessionID, todos ? toTodoView(todos) : undefined);
+          },
+          onError: () => setViews(sessionID, undefined),
         },
-        onError: () => setViews(sessionID, undefined),
-      });
+      );
     };
 
     const refresh = (sessionID: string) => {

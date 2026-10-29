@@ -62,12 +62,21 @@ export function watchTodos(options: WatchTodosOptions): () => void {
     });
 }
 
+/** What the subscription needs to talk to the server. */
 export interface TodoSubscriptionOptions {
-    /** Read at call time; same reason as {@link WatchTodosOptions.client}. */
+    /** Read at call time: the client is replaced after a server restart. */
     client: () => TodoClient;
     sessionID: () => string | undefined;
-    /** Called with the latest list, or `undefined` when the session is unknown. */
-    onChange: (todos: TodoRootItem[] | undefined) => void;
+}
+
+/**
+ * Where results go. The caller owns all state; nothing is kept here, so a caller
+ * that wants the latest list stores it in its own signal.
+ */
+export interface TodoSubscriptionHandlers {
+    /** The latest list, or `undefined` when the session is unknown. */
+    onData: (todos: TodoRootItem[] | undefined) => void;
+    /** A read or listener failed. Delivery is not stopped by this. */
     onError?: (error: unknown) => void;
 }
 
@@ -78,6 +87,7 @@ export interface TodoSubscription {
      * events emitted while the connection was down are lost.
      */
     refresh: () => void;
+    /** Stops everything. No handler is called afterwards. Idempotent. */
     dispose: () => void;
 }
 
@@ -86,10 +96,14 @@ export interface TodoSubscription {
  * cleanup. The TUI and the GUI used to each hand-roll this; keeping it in one
  * place is what makes them behave identically.
  *
+ * Handlers are the only output. There is no stored value and no open/close
+ * lifecycle: the transport is an HTTP read per load, not a persistent socket.
+ *
  * Framework-free on purpose: both panels wire their own reactivity around it.
  */
 export function createTodoSubscription(
     options: TodoSubscriptionOptions,
+    handlers: TodoSubscriptionHandlers,
 ): TodoSubscription {
     let disposed = false;
     let unwatch: (() => void) | undefined;
@@ -97,7 +111,7 @@ export function createTodoSubscription(
     const load = (sid: string | undefined) => {
         if (disposed) return;
         if (!sid) {
-            options.onChange(undefined);
+            handlers.onData(undefined);
             return;
         }
 
@@ -105,10 +119,11 @@ export function createTodoSubscription(
             .rpc(Todos)
             .read({ sessionID: sid })
             .then((res) => {
-                if (!disposed) options.onChange(res.ok ? res.todos : undefined);
+                // A reply can land after `dispose()`; the guard keeps it silent.
+                if (!disposed) handlers.onData(res.ok ? res.todos : undefined);
             })
             .catch((error) => {
-                if (!disposed) options.onError?.(error);
+                if (!disposed) handlers.onError?.(error);
             });
     };
 
