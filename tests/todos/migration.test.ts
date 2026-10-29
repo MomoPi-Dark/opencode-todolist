@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TodoRootItem } from "../../src/schemas/todo/item";
 import { resetDatabaseForTests, copyLegacyDatabase, openDatabase } from "../../src/storage/db";
-import { TodoStore } from "../../src/storage/todo-store";
+import { createTodoStore, legacyKey } from "../../src/storage/todo-store";
 
 /**
  * The database used to live at `<home>/.opencode/sessions/todos.db`. It now
@@ -31,11 +31,11 @@ const tmp = (prefix: string): string => {
 };
 
 /** A store resolving through `<home>`, i.e. the real upgrade path. */
-const storeAtHome = (home: string): TodoStore => new TodoStore({ env: {}, home });
+const storeAtHome = (home: string): ReturnType<typeof createTodoStore> => createTodoStore({ env: {}, home });
 
 /** A store pinned to an explicit directory, used only to seed fixtures. */
-const storeAt = (dataDir: string, home: string): TodoStore =>
-    new TodoStore({ env: { OPENCODE_TODOS_DIR: dataDir }, home });
+const storeAt = (dataDir: string, home: string): ReturnType<typeof createTodoStore> =>
+    createTodoStore({ env: { OPENCODE_TODOS_DIR: dataDir }, home });
 
 afterEach(() => {
     resetDatabaseForTests();

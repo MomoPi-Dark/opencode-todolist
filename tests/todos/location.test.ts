@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { TodoStore } from "../../src/storage/todo-store";
+import { createTodoStore, legacyKey } from "../../src/storage/todo-store";
 
-const base = (ctx: ConstructorParameters<typeof TodoStore>[0]) =>
-    new TodoStore(ctx).resolveTodosBaseDir();
+const base = (ctx: Parameters<typeof createTodoStore>[0]) =>
+    createTodoStore(ctx).resolveTodosBaseDir();
 
 describe("todo base directory", () => {
     test("linux: <home>/.local/share/opencode/todolist", () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TodoRootItem } from "../../src/schemas/todo/item";
 import { openDatabase, resetDatabaseForTests } from "../../src/storage/db";
-import { TodoStore } from "../../src/storage/todo-store";
+import { createTodoStore, legacyKey } from "../../src/storage/todo-store";
 
 /**
  * Version 2 upgrade path.
@@ -38,7 +38,7 @@ const tmp = (prefix = "todo-v2-"): string => {
     return dir;
 };
 
-const storeAtHome = (home: string): TodoStore => new TodoStore({ env: {}, home });
+const storeAtHome = (home: string): ReturnType<typeof createTodoStore> => createTodoStore({ env: {}, home });
 
 const newDb = (home: string): string =>
     join(home, ".local", "share", "opencode", "todolist", "todos.db");
@@ -54,7 +54,7 @@ const writeLegacyJson = (
     // The hashed layout used `TodoStore.legacyKey`, not an arbitrary name.
     const dir = join(
         base,
-        layout === "hashed" ? TodoStore.legacyKey(sessionID) : sessionID,
+        layout === "hashed" ? legacyKey(sessionID) : sessionID,
         "todos",
     );
     mkdirSync(dir, { recursive: true });
@@ -158,7 +158,7 @@ describe("v2 upgrade", () => {
         // so the user can fix it instead of wondering where the list went.
         expect(await store.readTodos("session-a")).toEqual([]);
         expect(existsSync(file)).toBe(true);
-        expect(store.getMigrationReport().failed.map((entry) => entry.file)).toContain(
+        expect(store.getMigrationReport().failed.map((entry: { file: string }) => entry.file)).toContain(
             file,
         );
     });
@@ -264,6 +264,6 @@ describe("v2 upgrade", () => {
         // Crucial: must NOT create a blank new DB that would permanently skip future retries.
         expect(existsSync(newDb(home))).toBe(false);
         expect(existsSync(legacyDb)).toBe(true);
-        expect(store.getMigrationReport().failed.map((f) => f.file)).toContain(legacyDb);
+        expect(store.getMigrationReport().failed.map((f: { file: string }) => f.file)).toContain(legacyDb);
     });
 });
