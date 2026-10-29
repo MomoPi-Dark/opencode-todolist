@@ -1,47 +1,27 @@
+import { type TodoOperationError } from "../../schemas/rpc/error";
 import type { TodoList, TodoRootItem } from "../../schemas/todo/item";
 import type { TodoReadInput } from "../../schemas/todo/read";
-import { TodoTree, type TodoLocation } from "../todo-tree";
-import { type TodoOperationResult } from "./types";
+import { readTodos } from "../../storage/todo-store";
+import { TodoLocation, TodoTree } from "../todotree";
 
-/**
- * `read` answers with an extra field: which row ids were printed. The caller can
- * pass that on to the TUI to highlight the row that was just inspected, without
- * re-deriving the scope.
- */
-export type ReadOperationResult = TodoOperationResult & {
-    visibleIds?: readonly number[];
-};
-
-/**
- * Resolves the `target` of a scoped read.
- *
- * `scope: "root"` and `scope: "item"` both end up as a `TodoLocation`, so the
- * renderer has only one shape to know. Targeting a root with `scope: "item"` is
- * legal too — it shows that single root.
- */
 const resolveTarget = (todos: TodoList, target: number): TodoLocation | null =>
     TodoTree.find(todos, target);
 
-/** What the tool returns for `read`; the same shape `execute` hands to the host. */
-export interface ReadToolResult {
-    ok: boolean;
-    todos: TodoRootItem[];
-    content: string;
-    visibleIds?: readonly number[];
-}
+export type ReadToolResult =
+    | {
+        ok: true;
+        todos: TodoRootItem[];
+        content: string;
+        visibleIds?: readonly number[];
+    }
+    | {
+        ok: false;
+        todos: TodoRootItem[];
+        content: string;
+        visibleIds?: readonly number[];
+        error: TodoOperationError;
+    };
 
-/**
- * `read`: render the stored list, optionally narrowed to one root or one row.
- * `children` shows the selected child with its root as context.
- *
- * Read never refuses because the list is "malformed" — showing the rows is more
- * useful than hiding them — but the structural warning goes first so the model
- * repairs the list before trusting the shape. It *does* refuse an unknown
- * `target`, because silently returning the whole list would hide the mistake.
- *
- * `metadata.visibleIds` tells the TUI which rows were printed. It is omitted
- * when everything is shown.
- */
 export function handleRead(
     todos: TodoList,
     input: TodoReadInput,
@@ -53,19 +33,24 @@ export function handleRead(
     let scoped: TodoRootItem[] = [...todos];
     let visibleIds: readonly number[] | undefined;
 
-    if (input.scope === "root" || input.scope === "item" || input.scope === "children") {
+    if (
+        input.scope === "root" ||
+        input.scope === "item" ||
+        input.scope === "children"
+    ) {
         const found = resolveTarget(todos, input.target);
         if (!found) {
             return {
                 ok: false,
                 todos: [...todos],
                 content: `No todo ${input.target}.`,
+                error: {
+                    code: "not_found",
+                    message: `No todo ${input.target}.`,
+                },
             };
         }
 
-        // The root keeps *all* its subtasks so its (completed/total) label stays
-        // honest; only the printed rows are narrowed. Dropping the subtasks
-        // would silently turn (2/2) into (1/1).
         scoped = [found.root];
 
         if (input.scope === "item") {
@@ -76,6 +61,10 @@ export function handleRead(
                     ok: false,
                     todos: [...todos],
                     content: `No child todo ${input.target}.`,
+                    error: {
+                        code: "not_found",
+                        message: `No child todo ${input.target}.`,
+                    },
                 };
             }
             visibleIds = [found.root.id, found.item.id];
@@ -98,4 +87,12 @@ export function handleRead(
         content,
         ...(visibleIds === undefined ? {} : { visibleIds }),
     };
+}
+
+export async function readSessionTodos(
+    sessionID: string,
+    input: TodoReadInput,
+): Promise<ReadToolResult> {
+    const todos = await readTodos(sessionID);
+    return handleRead(todos, input);
 }

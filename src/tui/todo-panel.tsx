@@ -23,8 +23,6 @@ import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "./layout";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 100;
 
-export const TODO_PANEL_MAX_ROWS = 8;
-
 export interface TodoListRow {
   id: number;
   content: string;

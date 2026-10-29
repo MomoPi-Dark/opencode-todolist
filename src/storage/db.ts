@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
  * No relations generic: this schema is queried with the core builder
  * (`select`/`insert`/`update`/`delete`), never with relational `db.query`.
  */
-export type TodoDatabase = SQLiteBunDatabase;
+type TodoDatabase = SQLiteBunDatabase;
 
 export interface TodoDatabaseHandle {
   /** Raw connection, for statements Drizzle does not expose (e.g. PRAGMA). */
