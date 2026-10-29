@@ -5,38 +5,40 @@ const parse = (input: Record<string, unknown>) =>
     TodoRpcClearInputSchema.safeParse({ sessionID: "ses_1", ...input });
 
 describe("TodoRpcClearInputSchema", () => {
-    test("accepts force alone", () => {
+    test("accepts force alone, and drops confirm from that branch", () => {
         const result = parse({ force: true });
         expect(result.success).toBe(true);
-    });
-
-    test("accepts confirm alone", () => {
-        const result = parse({ confirm: true });
-        expect(result.success).toBe(true);
-    });
-
-    test("rejects force together with confirm", () => {
-        const result = parse({ force: true, confirm: true });
-        expect(result.success).toBe(false);
-        if (!result.success) {
-            expect(result.error.issues[0]?.message).toContain("not both");
+        if (result.success) {
+            expect(result.data).toEqual({ sessionID: "ses_1", force: true });
         }
     });
 
+    test("accepts confirm alone, and normalises force to false", () => {
+        const result = parse({ confirm: true });
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.data).toEqual({
+                sessionID: "ses_1",
+                confirm: true,
+                force: false,
+            });
+        }
+    });
+
+    test("rejects force together with confirm", () => {
+        expect(parse({ force: true, confirm: true }).success).toBe(false);
+    });
+
     test("rejects force together with confirm even when confirm is false", () => {
-        const result = parse({ force: true, confirm: false });
-        expect(result.success).toBe(false);
+        expect(parse({ force: true, confirm: false }).success).toBe(false);
     });
 
     test("rejects neither field", () => {
         const result = parse({});
         expect(result.success).toBe(false);
-        if (!result.success) {
-            expect(result.error.issues[0]?.path).toEqual(["confirm"]);
-        }
     });
 
-    test("rejects confirm: false without force", () => {
+    test("rejects confirm: false", () => {
         expect(parse({ confirm: false }).success).toBe(false);
     });
 
@@ -46,5 +48,10 @@ describe("TodoRpcClearInputSchema", () => {
 
     test("accepts force: false with confirm: true", () => {
         expect(parse({ force: false, confirm: true }).success).toBe(true);
+    });
+
+    test("rejects unknown keys in either branch", () => {
+        expect(parse({ force: true, extra: 1 }).success).toBe(false);
+        expect(parse({ confirm: true, extra: 1 }).success).toBe(false);
     });
 });
