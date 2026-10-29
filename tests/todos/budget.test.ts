@@ -224,10 +224,7 @@ describe("cost of tool output (per call)", () => {
         budget(
             "clear",
             contentOf(
-                handleClear([{ id: 1, content: "x", status: "completed" }], {
-                    operation: "clear",
-                    confirm: true,
-                }),
+                handleClear([{ id: 1, content: "x", status: "completed" }]),
             ),
             10,
         );

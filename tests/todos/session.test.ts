@@ -53,7 +53,7 @@ describe("current storage and handlers seam", () => {
     test("clear persists an empty list only after a finished list", async () => {
         const session = setup();
         await updateTodos(session, () => [root(1, "completed")]);
-        const cleared = handleClear(readTodosSync(session), { operation: "clear", confirm: true });
+        const cleared = handleClear(readTodosSync(session));
         expect(cleared.ok).toBe(true);
         if (cleared.ok) await updateTodos(session, () => cleared.todos);
         expect(readTodosSync(session)).toEqual([]);

@@ -198,10 +198,9 @@ describe("payload sent back to the model", () => {
     });
 
     test("clear is the only operation that returns an empty payload", () => {
-        const result = handleClear([{ id: 1, content: "x", status: "completed" }], {
-            operation: "clear",
-            confirm: true,
-        }) as Payload;
+        const result = handleClear([
+            { id: 1, content: "x", status: "completed" },
+        ]) as Payload;
         expect(result.todos).toEqual([]);
         budget("clear", result, 10);
     });

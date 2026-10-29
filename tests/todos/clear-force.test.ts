@@ -16,7 +16,7 @@ describe("handleClear", () => {
     });
 
     test("force clears an open list: the user already confirmed", () => {
-        const result = handleClear(open, undefined, true);
+        const result = handleClear(open, { force: true });
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -35,15 +35,15 @@ describe("handleClear", () => {
             },
         ];
 
-        const result = handleClear(withChild, undefined, true);
+        const result = handleClear(withChild, { force: true });
 
         expect(result.ok).toBe(true);
         if (result.ok) expect(result.content).toContain("subtask");
     });
 
     test("clearing an empty list succeeds either way", () => {
-        expect(handleClear([], undefined, false).ok).toBe(true);
-        expect(handleClear([], undefined, true).ok).toBe(true);
+        expect(handleClear([], {}).ok).toBe(true);
+        expect(handleClear([], { force: true }).ok).toBe(true);
     });
 
     test("a finished list clears without force", () => {

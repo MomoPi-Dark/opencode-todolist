@@ -12,22 +12,29 @@ import { plural } from "../utils/plural";
 import { emitChanged, type TodoSessionRpc } from "./session-rpc";
 
 /**
+ * What `handleClear` needs beyond the list.
+ *
+ * Deliberately **not** `TodoClearOperationInput`: `force` is not part of the tool
+ * contract. It exists so the desktop and TUI, where the user confirmed through a
+ * dialog or a keybind they pressed themselves, can clear a list that still has
+ * open todos. A model never sends it, so it cannot erase a half-done plan.
+ */
+export interface ClearOptions {
+    readonly force?: boolean;
+}
+
+/**
  * `clear`: drop the whole list.
  *
- * Takes no input: `operation` and `confirm: true` are already enforced by the
- * schema, so by the time this runs the caller has said yes on purpose.
- *
- * Refused while anything is open (see `refuseIfOpen`) unless `force` is set.
- * The flag exists for the GUI and TUI, where the user confirmed through a dialog
- * and owns the data. The tool never sets it, so a model still cannot erase a
- * half-done plan. Clearing an empty list succeeds, so the call is idempotent.
+ * `confirm: true` is enforced by the schema, so by the time this runs the caller
+ * has said yes on purpose. The open-list guard applies unless `force` is set.
+ * Clearing an empty list succeeds, so the call is idempotent.
  */
 export function handleClear(
     todos: TodoList,
-    _input?: TodoClearOperationInput,
-    force = false,
+    options?: ClearOptions,
 ): TodoOperationResult {
-    if (!force) {
+    if (!options?.force) {
         const refused = refuseIfOpen("clear", todos);
         if (refused) return refused;
     }
@@ -65,7 +72,7 @@ export async function clearSessionTodos(
 
     try {
         await updateTodos(sessionID, (current) => {
-            const result = handleClear(current, undefined, force);
+            const result = handleClear(current, { force });
             if (!result.ok) throw new OperationRejected(result);
             accepted = result;
             return result.todos;

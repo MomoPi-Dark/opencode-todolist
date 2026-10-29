@@ -65,7 +65,16 @@ export async function runOperation(
 
         case "clear":
             return withMigrationNotice(
-                toToolResult(parseOutput(await rpc.clear({ sessionID, confirm: data.confirm }))),
+                toToolResult(
+                    parseOutput(
+                        await rpc.clear({
+                            sessionID,
+                            confirm: data.confirm,
+                            // The tool never forces: the open guard is the point.
+                            force: false,
+                        }),
+                    ),
+                ),
             );
 
         default: {
