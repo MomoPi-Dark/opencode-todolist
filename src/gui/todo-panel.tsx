@@ -1,10 +1,11 @@
 import { usePlugin } from "@opencode/plugin/gui";
 import { For, Show, createMemo, createSignal } from "solid-js";
-import { Todos, type TodoView, type TodoViewItem } from "../rpc";
+import { Todos, type TodoView } from "../rpc";
 import { isOpenStatus } from "../schemas/todo/status";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
 import { TodoDurations } from "../todos/utils/durations";
 import { buildTodoRows } from "../todos/utils/rows";
+import { BASE, DANGER, FAINT, MUTED, STATUS_COLOR } from "./color";
 
 const STATUS_ICON = {
   pending: "dash",
@@ -13,19 +14,6 @@ const STATUS_ICON = {
   cancelled: "circle-x",
   error: "circle-exclamation",
 } as const;
-
-const BASE = "var(--v2-text-text-base)";
-const MUTED = "var(--v2-text-text-muted)";
-const FAINT = "var(--v2-text-text-faint)";
-const DANGER = "var(--v2-state-fg-danger)";
-
-const STATUS_COLOR: Record<TodoViewItem["status"], string> = {
-  pending: MUTED,
-  in_progress: BASE,
-  completed: "var(--v2-state-fg-success)",
-  cancelled: FAINT,
-  error: DANGER,
-};
 
 interface Props {
   sessionID: () => string;
@@ -65,8 +53,6 @@ export function TodoPanel(props: Props) {
     const composer = ctx.screen.current()?.composer;
     const view = props.view();
     if (!composer || !view) return;
-
-    // Fill the prompt instead of sending: the desktop user reviews before Enter.
     composer.setText(continuePrompt(view));
     composer.focus();
   };
@@ -86,7 +72,12 @@ export function TodoPanel(props: Props) {
     if (!ok) return;
 
     try {
-      const res = await ctx.client.rpc(Todos).clear({ sessionID });
+      const res = await ctx.client.rpc(Todos).clear({
+        sessionID,
+        // The user confirmed in the dialog above and owns the data, so the
+        // open-list guard does not apply here.
+        force: true,
+      });
       if (!res.ok) {
         await showClearError(res.error.message || "Unknown error.");
         return;
@@ -97,6 +88,7 @@ export function TodoPanel(props: Props) {
       );
       return;
     }
+
     props.onRefresh();
   };
 

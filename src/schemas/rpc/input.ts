@@ -28,5 +28,11 @@ export type TodoRpcUpdateInput = z.infer<typeof TodoRpcUpdateInputSchema>;
 
 export const TodoRpcClearInputSchema = SessionIdSchema.extend({
     confirm: z.boolean().optional(),
+    /**
+     * Skips the "list still has open todos" guard. Set by the GUI and TUI, where
+     * the user has already confirmed through a dialog and owns the data. The tool
+     * never sets it, so a model cannot erase a half-done plan by accident.
+     */
+    force: z.boolean().optional(),
 });
 export type TodoRpcClearInput = z.infer<typeof TodoRpcClearInputSchema>;

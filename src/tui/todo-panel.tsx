@@ -436,7 +436,12 @@ export function TodoProgress(props: {
     const sid = sessionID();
     if (!sid) return;
     try {
-      const res = await context.client.rpc(Todos).clear({ sessionID: sid });
+      const res = await context.client.rpc(Todos).clear({
+        sessionID: sid,
+        // The keybind is the user's own action; the open-list guard is for the
+        // tool, where a model could erase a half-done plan.
+        force: true,
+      });
       if (!res.ok) {
         showClearError(res.error.message || "Could not clear list.");
         return;

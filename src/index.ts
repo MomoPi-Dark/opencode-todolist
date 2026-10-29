@@ -37,7 +37,11 @@ async function registerTodoRpc(ctx: Plugin.Context) {
         },
         clear: (input) => {
             if (!holder.rpc) throw new Error("todo rpc not ready");
-            return clearSessionTodos(input.sessionID, holder.rpc);
+            return clearSessionTodos(
+                input.sessionID,
+                holder.rpc,
+                input.force === true,
+            );
         },
     });
 
