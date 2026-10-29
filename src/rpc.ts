@@ -40,12 +40,15 @@ export const Todos = Rpc.define({
     },
 });
 
+/** The slice of the OpenCode client this module touches. */
+export type TodoClient = Pick<OpenCodeClient, "rpc">;
+
 export interface WatchTodosOptions {
     /**
      * Read at call time. The OpenCode client is replaced after a server restart,
      * so capturing it once would leave the listener bound to a dead client.
      */
-    client: () => OpenCodeClient;
+    client: () => TodoClient;
     sessionID?: () => string | undefined;
     onChange: (sessionID: string) => void;
 }
@@ -61,7 +64,7 @@ export function watchTodos(options: WatchTodosOptions): () => void {
 
 export interface TodoSubscriptionOptions {
     /** Read at call time; same reason as {@link WatchTodosOptions.client}. */
-    client: () => OpenCodeClient;
+    client: () => TodoClient;
     sessionID: () => string | undefined;
     /** Called with the latest list, or `undefined` when the session is unknown. */
     onChange: (todos: TodoRootItem[] | undefined) => void;

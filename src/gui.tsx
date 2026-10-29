@@ -51,7 +51,13 @@ export default Plugin.define({
     const subscribeTodos = (sessionID: string) => {
       subscription?.dispose();
       subscription = createTodoSubscription({
-        client: () => server()!.client,
+        // The ref is absent before the app interface mounts; the subscription
+        // reports the miss through `onError` rather than asserting it exists.
+        client: () => {
+          const current = server();
+          if (!current) throw new Error("todo panel: no server ref");
+          return current.client;
+        },
         sessionID: () => sessionID,
         onChange: (todos) => {
           setViews(sessionID, todos ? toTodoView(todos) : undefined);
@@ -68,10 +74,20 @@ export default Plugin.define({
     createKeyed(() => ctx.sessions.current()?.id, refresh);
 
     // Subscriptions are live only: events emitted while the connection was down
-    // are lost, so reconnect must re-read instead of trusting the last state.
+    // are lost, so a reconnect must re-read. The first `connected` observation is
+    // skipped because `subscribeTodos` already performed the initial read.
+    let seenConnected: boolean | undefined;
+
     createEffect(() => {
       const current = server();
-      if (!current?.connected) return;
+      const connected = current?.connected === true;
+
+      const wasConnected = seenConnected;
+      seenConnected = connected;
+
+      if (wasConnected === undefined) return;
+      if (!connected || wasConnected) return;
+
       subscription?.refresh();
     });
 

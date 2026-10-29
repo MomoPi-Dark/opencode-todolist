@@ -10,19 +10,14 @@ import {
 } from "solid-js";
 import { Glyph } from "../icons/glyph";
 import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/icons";
-import {
-  Todos,
-  createTodoSubscription,
-  type TodoSubscription,
-} from "../rpc";
-import type { TodoRootItem } from "../schemas/todo/item";
+import { Todos } from "../rpc";
 import { isOpenStatus, type TodoStatus } from "../schemas/todo/status";
 import { TodoTree } from "../todos/todotree";
 import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
 import { TodoDurations } from "../todos/utils/durations";
-import type { TodoDisplayItem, TodoDisplaySummary } from "../todos/utils/display";
-import { getTodoDisplaySummary } from "../todos/utils/display";
-import { buildTodoRows } from "../todos/utils/rows";
+import type { TodoDisplayItem } from "../todos/utils/display";
+import { error as logError } from "../utils/log";
+import { createPanelState } from "./panel-state";
 import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "./layout";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -268,7 +263,7 @@ function createHover() {
   };
 }
 
-const toggleId = (current: number[], id: number) =>
+const toggleId = (current: readonly number[], id: number): readonly number[] =>
   current.includes(id)
     ? current.filter((entry) => entry !== id)
     : [...current, id];
@@ -281,37 +276,17 @@ export function TodoProgress(props: {
   const sessionID = () => props.sessionID ?? "";
   const theme = () => context.theme;
 
-  const [todos, setTodos] = createSignal<TodoRootItem[]>([]);
-
-  // One shared RPC path: initial read plus live `changed` events, re-bound
-  // whenever the panel's session changes. The client is read through an
-  // accessor because it is replaced after a server restart.
-  let subscription: TodoSubscription | undefined;
-
-  createEffect(() => {
-    const sid = sessionID();
-    subscription?.dispose();
-
-    if (!sid) {
-      setTodos([]);
-      return;
-    }
-
-    subscription = createTodoSubscription({
-      client: () => context.client,
-      sessionID: () => sid,
-      onChange: (next) => setTodos(next ?? []),
-      onError: () => setTodos([]),
-    });
-  });
-
-  onCleanup(() => subscription?.dispose());
+  const state = createPanelState({ context, sessionID });
 
   const [isCollapsed, setIsCollapsed] = createSignal(false);
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
-  const [expandedIds, setExpandedIds] = createSignal<number[]>([]);
-  const [manualRootToggles, setManualRootToggles] = createSignal<number[]>([]);
+  const todos = state.todos;
+  const summary = state.summary;
+  const expandedIds = state.expandedIds;
+  const manualRootToggles = state.manualRootToggles;
+  const setExpandedIds = state.setExpandedIds;
+  const setManualRootToggles = state.setManualRootToggles;
   const tracker = new TodoDurations(Date.now, formatElapsed);
 
   const clearHover = createHover();
@@ -356,10 +331,6 @@ export function TodoProgress(props: {
       unsubscribe();
     } catch {}
   });
-
-  const summary = createMemo<TodoDisplaySummary | null>(() =>
-    getTodoDisplaySummary(todos()),
-  );
 
   createEffect(() => {
     const animating =
@@ -415,7 +386,7 @@ export function TodoProgress(props: {
     const items = summary()?.items ?? [];
     const durations = tracker.observe(items);
 
-    return buildTodoRows(items, manualRootToggles()).map(
+    return state.rows().map(
       ({ item, expandable }): TodoListRow => ({
         id: item.id,
         content: item.content,
@@ -448,9 +419,9 @@ export function TodoProgress(props: {
         sessionID: sid,
         text: continuePrompt(summary()),
       });
-    } catch (error) {
+    } catch (cause) {
       setIsContinuePending(false);
-      console.error("[todos] continue failed:", error);
+      logError("continue failed:", cause);
     }
   };
 
