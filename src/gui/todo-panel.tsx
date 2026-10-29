@@ -42,7 +42,6 @@ export function TodoPanel(props: Props) {
   const rows = createMemo<Row[]>(() => {
     const list = items();
     const durations = tracker.observe(list);
-
     return buildTodoRows(list, manual()).map((row) => ({
       ...row,
       elapsed: durations.get(row.item.id),

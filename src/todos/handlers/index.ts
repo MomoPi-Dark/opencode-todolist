@@ -70,8 +70,6 @@ export async function runOperation(
                         await rpc.clear({
                             sessionID,
                             confirm: data.confirm,
-                            // The tool never forces: the open guard is the point.
-                            force: false,
                         }),
                     ),
                 ),

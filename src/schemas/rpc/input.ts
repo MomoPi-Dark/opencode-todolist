@@ -28,11 +28,25 @@ export type TodoRpcUpdateInput = z.infer<typeof TodoRpcUpdateInputSchema>;
 
 export const TodoRpcClearInputSchema = SessionIdSchema.extend({
     confirm: z.boolean().optional(),
-    /**
-     * Skips the "list still has open todos" guard. Set by the GUI and TUI, where
-     * the user confirmed through a dialog they see. Not part of the tool schema:
-     * the tool schema is sent on every request, and a model must keep the guard.
-     */
-    force: z.boolean().optional(),
+    force: z.boolean().default(false).optional(),
+}).superRefine((input, ctx) => {
+    if (input.force === true) {
+        if (input.confirm !== undefined) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["confirm"],
+                message: "Send either force or confirm, not both",
+            });
+        }
+        return;
+    }
+
+    if (input.confirm !== true) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["confirm"],
+            message: "Pass confirm: true, or force: true from the GUI or TUI",
+        });
+    }
 });
 export type TodoRpcClearInput = z.infer<typeof TodoRpcClearInputSchema>;
