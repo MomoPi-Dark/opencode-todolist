@@ -9,13 +9,13 @@ const open: TodoRootItem[] = [
 
 const clear = (
     todos: TodoRootItem[],
-    guard: "guard" | "disable",
+    guard: "stand" | "disable",
     sessionID = "ses_1",
 ) => handleClear(todos, { guard, sessionID });
 
 describe("handleClear", () => {
     test("guard refuses while anything is open", () => {
-        const result = clear(open, "guard");
+        const result = clear(open, "stand");
 
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error.code).toBe("list_open");
@@ -47,9 +47,12 @@ describe("handleClear", () => {
         if (result.ok) expect(result.content).toContain("subtask");
     });
 
-    test("clearing an empty list succeeds under either guard", () => {
-        expect(clear([], "guard").ok).toBe(true);
-        expect(clear([], "disable").ok).toBe(true);
+    test("clearing an empty list is refused, not reported as success", () => {
+        for (const guard of ["stand", "disable"] as const) {
+            const result = clear([], guard);
+            expect(result.ok).toBe(false);
+            if (!result.ok) expect(result.error.code).toBe("list_empty");
+        }
     });
 
     test("a finished list clears with the guard on", () => {
@@ -57,6 +60,6 @@ describe("handleClear", () => {
             { id: 1, content: "Done", status: "completed" },
         ];
 
-        expect(clear(done, "guard").ok).toBe(true);
+        expect(clear(done, "stand").ok).toBe(true);
     });
 });

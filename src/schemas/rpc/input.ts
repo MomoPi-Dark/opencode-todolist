@@ -3,7 +3,7 @@ import { TodoListSchema } from "../todo/item";
 import { TodoReadOperationSchema } from "../todo/read";
 import { MAX_UPDATES, TodoUpdateItemSchema } from "../todo/update";
 
-export const SessionIdSchema = z.object({ sessionID: z.string() });
+export const SessionIdSchema = z.object({ sessionID: z.string() }).strict();
 
 export const TodoRpcReadInputSchema = SessionIdSchema.and(
     z.preprocess(
@@ -26,12 +26,22 @@ export const TodoRpcUpdateInputSchema = SessionIdSchema.extend({
 });
 export type TodoRpcUpdateInput = z.infer<typeof TodoRpcUpdateInputSchema>;
 
-export const TodoRpcClearInputGuardSchema = z.enum(["guard", "disable"]);
+export const TodoRpcClearInputGuardSchema = z.enum(["stand", "disable"]);
 export type TodoRpcClearInputGuard = z.infer<
     typeof TodoRpcClearInputGuardSchema
 >;
 
+export const TodoRpcClearInputUiSchema = z
+    .object({
+        confirm: z.boolean(),
+        accept_message: z.string().optional(),
+        cancel_message: z.string().optional(),
+    })
+    .strict();
+export type TodoRpcClearInputUi = z.infer<typeof TodoRpcClearInputUiSchema>;
+
 export const TodoRpcClearInputSchema = SessionIdSchema.extend({
     guard: TodoRpcClearInputGuardSchema,
+    ui: TodoRpcClearInputUiSchema.optional(),
 }).strict();
 export type TodoRpcClearInput = z.infer<typeof TodoRpcClearInputSchema>;
