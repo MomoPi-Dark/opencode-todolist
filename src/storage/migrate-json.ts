@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { TodoListSchema, type TodoRootItem } from "../schemas/todo/item";
 import type { TodoDatabaseHandle } from "./db";
 import { InvalidTodoDataError } from "./errors";
-import { todoItem, todoSession } from "./schema";
+import { todoItem, todoSession } from "./tables";
 
 /**
  * The transaction handle Drizzle passes to a `db.transaction` callback.

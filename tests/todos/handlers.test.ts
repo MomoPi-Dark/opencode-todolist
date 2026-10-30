@@ -30,8 +30,12 @@ const success = <T extends { ok: boolean }>(result: T): T & { ok: true } => {
 };
 
 describe("handleRead", () => {
-    test("renders an empty list", () => {
-        expect(success(handleRead([], read())).content).toBe("No todos recorded.");
+    test("answers an empty list instead of refusing it", () => {
+        // The `list_empty` guard is parked for `read`, so an empty session is
+        // answered (with no rows) rather than refused.
+        const result = handleRead([], read());
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.todos).toEqual([]);
     });
 
     test("renders the full tree and summary", () => {
@@ -90,14 +94,14 @@ describe("handleCreate", () => {
 
 describe("handleClear", () => {
     test("clears a finished list", () => {
-        const result = success(handleClear([root(1, { status: "completed" })], { guard: "guard", sessionID: "ses_1" }));
+        const result = success(handleClear([root(1, { status: "completed" })], { guard: "stand", sessionID: "ses_1" }));
         expect(result.todos).toEqual([]);
         expect(result.content).toBe("Cleared 1 todo.");
     });
 
     test("refuses while a child is open", () => {
         const current = [root(1, { status: "completed", children: [child(1.1)] })];
-        const result = handleClear(current, { guard: "guard", sessionID: "ses_1" });
+        const result = handleClear(current, { guard: "stand", sessionID: "ses_1" });
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error.code).toBe("list_open");
     });

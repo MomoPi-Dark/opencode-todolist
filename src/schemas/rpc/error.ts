@@ -26,6 +26,8 @@ export const TodoOperationCodeSchema = z.union([
     TodoSystemCodeSchema,
     z.literal("list_open"),
     z.literal("invalid_list"),
+    z.literal("list_empty"),
+    z.literal("clear_cancelled"),
 ]);
 
 export type TodoOperationCode = z.infer<typeof TodoOperationCodeSchema>;
@@ -72,6 +74,29 @@ export type TodoToolResult = {
     metadata?: { code?: TodoOperationCode; visibleIds?: readonly number[] };
 };
 
+export class TodoToolRejection extends Error {
+    readonly code: TodoOperationCode | undefined;
+
+    constructor(error: TodoOperationError | undefined) {
+        super(error?.message ?? "The operation was rejected.");
+        this.name = "TodoToolRejection";
+        this.code = error?.code;
+    }
+
+    /**
+     * `Error#message` is non-enumerable, so plain `JSON.stringify` dropped it and
+     * the host rendered the whole object as `[object Object]`. This keeps the
+     * message in the payload that actually reaches the model.
+     */
+    toJSON(): { name: string; message: string; code?: TodoOperationCode } {
+        return {
+            name: this.name,
+            message: this.message,
+            ...(this.code === undefined ? {} : { code: this.code }),
+        };
+    }
+}
+
 export const toToolResult = (result: {
     ok: boolean;
     todos: TodoRootItem[];
@@ -79,19 +104,15 @@ export const toToolResult = (result: {
     visibleIds?: readonly number[];
     error?: TodoOperationError;
 }): TodoToolResult => {
-    return result.ok
-        ? {
-            output: { todos: result.todos },
-            content: result.content ?? "",
-            ...(result.visibleIds === undefined
-                ? {}
-                : { metadata: { visibleIds: result.visibleIds } }),
-        }
-        : {
-            output: { todos: result.todos },
-            content: result.error?.message ?? result.content ?? "",
-            metadata: { code: result.error?.code },
-        };
+    if (!result.ok) throw new TodoToolRejection(result.error);
+
+    return {
+        output: { todos: result.todos },
+        content: result.content ?? "",
+        ...(result.visibleIds === undefined
+            ? {}
+            : { metadata: { visibleIds: result.visibleIds } }),
+    };
 };
 
 export const operationOk = (
@@ -99,24 +120,25 @@ export const operationOk = (
     content: string,
 ): TodoOperationOk => ({ ok: true, content, todos });
 
-export const operationErr = (
-    code: TodoOperationCode,
-    message: string,
-    todos: TodoRootItem[],
-    index?: number,
-): TodoOperationErr => ({
+export const operationErr = (error: {
+    code: TodoOperationCode;
+    message: string;
+    todos: TodoRootItem[];
+    index?: number;
+}): TodoOperationErr => ({
     ok: false,
-    todos,
-    error: {
-        code,
-        message,
-        ...(index !== undefined ? { index } : {}),
-    },
+    error,
+    todos: error.todos,
 });
 
 export class OperationRejected extends Error {
     constructor(readonly result: TodoOperationResult) {
         super(result.ok ? "Operation rejected" : result.error.message);
         this.name = "OperationRejected";
+    }
+
+    /** Same reason as `TodoToolRejection`: keep `message` on the wire. */
+    toJSON(): { name: string; message: string } {
+        return { name: this.name, message: this.message };
     }
 }

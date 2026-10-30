@@ -40,11 +40,3 @@ export const isCancellingStatus = (
   status: TodoStatus,
 ): status is CancellingStatus =>
   (CANCELLING_STATUSES as readonly TodoStatus[]).includes(status);
-
-export const STATUS_LABEL: Record<TodoStatus, string> = {
-  pending: "not started",
-  in_progress: "currently being worked on",
-  completed: "completed",
-  cancelled: "cancelled",
-  error: "needs fixing",
-};

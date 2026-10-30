@@ -12,12 +12,6 @@ import { TodoTree } from "../todotree";
 import { formatWriteOutput } from "../utils/formatText";
 import { emitChanged, type TodoSessionRpc } from "./session-rpc";
 
-/**
- * `create`: replace the whole list with a new plan.
- *
- * Refused while anything is still open, through the same guard `clear` uses, so
- * the refusal wording never diverges between the two operations.
- */
 export function handleCreate(
     todos: TodoList,
     input: TodoCreateOperationInput,
@@ -27,19 +21,17 @@ export function handleCreate(
 
     const check = TodoTree.validateAndNormalize(input.todos);
     if (!check.valid) {
-        return operationErr("invalid_list", check.error, [...todos]);
+        return operationErr({
+            code: "invalid_list",
+            message: check.error,
+            todos: [...todos],
+        });
     }
 
     const next: TodoRootItem[] = check.data;
     return operationOk(next, formatWriteOutput(next, todos));
 }
 
-/**
- * Applies `create` to the stored list of a session.
- *
- * `rpc` is optional so the pure write path (and tests) can run without an RPC
- * registration; when present, a committed write emits `changed`.
- */
 export async function createSessionTodos(
     sessionID: string,
     input: Pick<TodoCreateOperationInput, "todos">,
@@ -62,7 +54,12 @@ export async function createSessionTodos(
         throw error;
     }
 
-    if (!accepted) return operationErr("invalid_list", "Nothing created.", []);
+    if (!accepted)
+        return operationErr({
+            code: "invalid_list",
+            message: "Nothing created.",
+            todos: [],
+        });
 
     if (rpc) await emitChanged(rpc, sessionID);
     return accepted;

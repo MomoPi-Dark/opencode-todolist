@@ -5,7 +5,10 @@ import {
     type TodoOperationResult,
 } from "../../schemas/rpc/error";
 import type { TodoList } from "../../schemas/todo/item";
-import type { TodoUpdateInput, TodoUpdateItem } from "../../schemas/todo/update";
+import type {
+    TodoUpdateInput,
+    TodoUpdateItem,
+} from "../../schemas/todo/update";
 import { updateTodos } from "../../storage/todo-store";
 import { TodoRules } from "../security/rules";
 import { formatWriteOutput } from "../utils/formatText";
@@ -21,15 +24,25 @@ export function applyUpdate(
     todos: TodoList,
     updates: readonly TodoUpdateItem[],
 ): TodoOperationResult {
+    if (todos.length === 0) {
+        return operationErr({
+            code: "list_empty",
+            message:
+                "This session has no todos yet. Use '[manage_todo_list] <create> <...args>' to start a list.",
+            todos: [],
+        });
+    }
+
     const applied = TodoRules.apply(todos, updates);
     if (!applied.ok) {
         const { error, index } = applied;
-        return operationErr(
-            error.code,
-            `Update ${index + 1} of ${updates.length} (id ${error.id ?? "?"}) rejected: ${error.message}`,
-            [...todos],
+        const message = `Update ${index + 1} of ${updates.length} (id ${error.id ?? "?"}) rejected: ${error.message}`;
+        return operationErr({
+            code: error.code,
+            message,
+            todos: [...todos],
             index,
-        );
+        });
     }
 
     return operationOk(
@@ -63,7 +76,12 @@ export async function updateSessionTodos(
         throw error;
     }
 
-    if (!accepted) return operationErr("not_found", "Nothing updated.", []);
+    if (!accepted)
+        return operationErr({
+            code: "not_found",
+            message: "Nothing updated.",
+            todos: [],
+        });
 
     if (rpc) await emitChanged(rpc, sessionID);
     return accepted;
