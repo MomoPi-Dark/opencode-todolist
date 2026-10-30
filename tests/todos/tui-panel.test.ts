@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { continuePrompt, shorten } from "../../src/todos/utils/continue-prompt";
 import type { TodoDisplaySummary } from "../../src/todos/utils/display";
-import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "../../src/tui/layout";
+import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "../../src/ui/tui/layout";
 import {
   FindActiveEntryIndex,
   NextFollowScrollTop,
   TodoListEntries,
   type TodoListRow,
-} from "../../src/tui/todo-panel";
+} from "../../src/ui/tui/todo-panel";
 
 const row = (overrides: Partial<TodoListRow> = {}): TodoListRow => ({
   id: 1,

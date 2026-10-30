@@ -12,13 +12,13 @@ describe("bundled skill contracts", () => {
     expect(content).toContain('"operation": "read"');
     expect(content).toContain('"operation": "update"');
     expect(content).not.toContain('"operation": "write"');
-    expect(content).not.toContain('"scope": "children"');
+    // `children` is a real scope in the schema, so the docs may show it.
+    expect(content).toContain('"scope": "children"');
 
     const continuation = skill("continue-todolist");
     expect(continuation).toContain('{ "operation": "read" }');
-    expect(continuation).toContain('`update`');
+    expect(continuation).toContain("`update`");
     expect(continuation).not.toContain('"operation": "write"');
-    expect(continuation).not.toContain('"scope": "children"');
   });
 
   test("documents the required update array shape", () => {
@@ -28,13 +28,15 @@ describe("bundled skill contracts", () => {
     expect(content).not.toContain("one object or an array");
   });
 
-  test("documents clear confirmation and cancellation rules", () => {
+  test("documents that a wrong operation is an error", () => {
     const content = skill("todolist");
-    expect(content).toContain('"confirm": true');
+    // The tool has no `confirm` field any more: the agent asks the user in chat.
+    expect(content).not.toContain('"confirm": true');
+    expect(content).toContain('{ "operation": "clear" }');
+    // Every failure is reported by code, including an empty session.
+    expect(content).toContain("`list_empty`");
+    expect(content).toContain("`list_open`");
     expect(content).toContain('status: "cancelled"');
-    expect(content).toContain("`pending`,");
-    expect(content).toContain("`in_progress`,");
-    expect(content).toContain("`error` todo");
     expect(content).not.toContain("status: \"error\" or \"cancelled\"");
   });
 });

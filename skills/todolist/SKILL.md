@@ -73,6 +73,9 @@ Read defaults to the complete tree in `tree` format:
 Supported formats are `tree` and `summary`. `summary` lists completed rows
 only; when none are completed it returns `No completed tasks yet.`.
 
+Reading a session that has no todos fails with `list_empty`. That is not a
+transient error: start a list with `create` instead of retrying `read`.
+
 Supported scopes:
 
 ```json
@@ -128,15 +131,32 @@ not send the `clear` tool call in the same response that asks for confirmation;
 wait for a later user reply that explicitly agrees. After confirmation, send:
 
 ```json
-{ "operation": "clear", "confirm": true }
+{ "operation": "clear" }
 ```
 
-The operation is rejected while any root or child is open. `confirm: true` is
-the tool-level confirmation, not a substitute for the user's explicit reply.
+The operation is rejected while any root or child is open, and rejected with
+`list_empty` when the session has no todos. The confirmation is a conversation
+with the user, not a tool field.
+
+## Errors
+
+Every mistake is returned as a failed call with a `code`, never as a successful
+reply carrying an apology. Check the code before retrying:
+
+| code | meaning |
+| --- | --- |
+| `list_empty` | The session has no todos; `read`, `update` and `clear` need a list. Use `create`. |
+| `list_open` | `create` or `clear` was called while a todo is still pending, in progress or errored. |
+| `not_found` | The targeted id does not exist. |
+| `child_open` | A root status changed while it still has unfinished children. |
+| `root_out_of_order` | A later root was touched before an earlier one finished. |
+| `invalid_list` | The submitted list failed validation; the message names the rule. |
 
 ## Working Rules
 
-1. Read first when the current list is unknown or may have changed.
+1. Read first when the current list is unknown or may have changed. A
+   `list_empty` error means there is nothing to read yet, so start with
+   `create`.
 2. If there is no existing list and the work qualifies, initialize it with
    `create`; do not use an unsupported operation.
 3. Keep one active root/child chain. A child may be active only under its

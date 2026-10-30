@@ -24,7 +24,8 @@
       "types": "./dist/tui.d.ts",
       "import": "./dist/tui.js",
       "default": "./dist/tui.js"
-    }
+    },
+    "./gui-experimental": "./dist/gui-experimental.cjs"
   },
   "keywords": [
     "opencode",
@@ -42,34 +43,36 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:gui": "vite build",
+    "dev:gui": "vite build --watch",
     "prepare": "bun run compile",
-    "compile": "bun run build && node scripts/build-jsx.mjs",
-    "build:jsx": "node scripts/build-jsx.mjs",
-    "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/build-jsx.mjs\"",
+    "compile": "bun run build && node scripts/build-jsx.mjs && bun run build:gui",
+    "dev": "bun run --parallel dev:server dev:gui",
+    "dev:server": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/build-jsx.mjs\"",
     "test": "bun test tests/**/*.test.ts",
-    "test:render": "bun --conditions=browser test/glyph.render.test.tsx",
-    "test:todo": "bun test/todo.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run test",
     "update": "git pull && bun run check && bun run compile"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.3",
+    "@types/bun": "^1.4.4",
     "@types/node": "^26.6.5",
     "drizzle-kit": "^1.0.0-rc.4",
     "tsc-watch": "^7.2.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-solid": "^2.11.14"
   },
   "dependencies": {
-    "@opencode/plugin": "2.1.2",
-    "@opentui/core": "0.6.6",
-    "@opentui/solid": "0.6.6",
+    "@opencode/plugin": "2.2.0",
+    "@opentui/core": "0.7.0",
+    "@opentui/solid": "0.7.0",
     "drizzle-orm": "^1.0.0-rc.4",
-    "solid-js": "1.9.12",
-    "zod": "^4.6.6"
+    "solid-js": "1.9.17",
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
-    "@opentui/solid": ">=0.6.6",
-    "solid-js": ">=1.9.12"
+    "@opentui/solid": ">=0.7.0",
+    "solid-js": ">=1.9.17"
   }
 }
