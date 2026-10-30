@@ -143,16 +143,17 @@ describe("TodoTree.validateAndNormalize", () => {
             );
         });
 
-        test("rejects an in-progress subtask whose parent is not in progress", () => {
-            expectsMessage(
-                [
-                    root(1, {
-                        status: "pending",
-                        children: [child(1.1, { status: "in_progress" })],
-                    }),
-                ],
-                "Set parent to 'in_progress' first",
-            );
+        test("a container root takes its status from a running child", () => {
+            // A root with subtasks is a container: it no longer has to be set
+            // to `in_progress` first, the running child decides.
+            const result = validate([
+                root(1, {
+                    status: "pending",
+                    children: [child(1.1, { status: "in_progress" })],
+                }),
+            ]);
+            expect(result.valid).toBe(true);
+            if (result.valid) expect(result.data[0]?.status).toBe("in_progress");
         });
 
         test("allows an in-progress subtask under an in-progress parent", () => {
@@ -224,19 +225,22 @@ describe("TodoTree.validateAndNormalize", () => {
                 }),
             ]);
             expect(result.valid).toBe(true);
-            if (result.valid) expect(result.data[0]?.status).toBe("in_progress");
+            // A cancelled child is not work, so the container finishes once the
+            // remaining child is done — the stored root status is ignored.
+            if (result.valid) expect(result.data[0]?.status).toBe("completed");
         });
 
-        test("rejects a completed root that still has unfinished subtasks", () => {
-            expectsMessage(
-                [
-                    root(1, {
-                        status: "completed",
-                        children: [child(1.1), child(1.2, { status: "completed" })],
-                    }),
-                ],
-                "cannot be marked 'completed'",
-            );
+        test("derives a container status instead of rejecting a completed root", () => {
+            // The caller may not force a container to `completed`; the children
+            // decide, so an unfinished child simply leaves it `pending`.
+            const result = validate([
+                root(1, {
+                    status: "completed",
+                    children: [child(1.1), child(1.2, { status: "completed" })],
+                }),
+            ]);
+            expect(result.valid).toBe(true);
+            if (result.valid) expect(result.data[0]?.status).toBe("pending");
         });
 
         test("runs the order check after the promotion", () => {
@@ -512,5 +516,57 @@ describe("TodoTree.renderSummary", () => {
         );
 
         expect(summary).toBe("- [x] 1.1 Sub 1.1");
+    });
+});
+
+describe("TodoTree.deriveRootStatus — a root with children is a container", () => {
+    const container = (status: TodoChildren["status"], childStatuses: TodoChildren["status"][]) =>
+        root(1, {
+            status,
+            children: childStatuses.map((childStatus, index) =>
+                child(1.1 + index * 0.1, { status: childStatus }),
+            ),
+        });
+
+    test("a running child makes the container running", () => {
+        expect(
+            TodoTree.deriveRootStatus(
+                container("pending", ["completed", "in_progress"]),
+            ),
+        ).toBe("in_progress");
+    });
+
+    test("a pending child keeps a container pending, whatever the root says", () => {
+        for (const stored of ["in_progress", "completed"] as const) {
+            expect(
+                TodoTree.deriveRootStatus(container(stored, ["completed", "pending"])),
+            ).toBe("pending");
+        }
+    });
+
+    test("every child done finishes the container", () => {
+        expect(
+            TodoTree.deriveRootStatus(container("pending", ["completed", "completed"])),
+        ).toBe("completed");
+    });
+
+    test("a cancelled child is not work and does not hold the container open", () => {
+        expect(
+            TodoTree.deriveRootStatus(
+                container("in_progress", ["completed", "cancelled"]),
+            ),
+        ).toBe("completed");
+    });
+
+    test("an errored child marks the container errored", () => {
+        expect(
+            TodoTree.deriveRootStatus(container("in_progress", ["error", "pending"])),
+        ).toBe("error");
+    });
+
+    test("a root without children keeps its own status", () => {
+        expect(TodoTree.deriveRootStatus(root(1, { status: "in_progress" }))).toBe(
+            "in_progress",
+        );
     });
 });

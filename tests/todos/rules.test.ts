@@ -139,8 +139,9 @@ describe("TodoRules.apply — basic patches", () => {
         );
     });
 
-    test("root cancellation is allowed after children are final", () => {
-        const todos = accepts(
+    test("root cancellation needs cancel_remaining once a child is done", () => {
+        // A completed child locks the container, so a bare cancel is refused.
+        refuses(
             [
                 root(1, {
                     children: [
@@ -153,7 +154,27 @@ describe("TodoRules.apply — basic patches", () => {
                 }),
             ],
             update({ id: 1, status: "cancelled" }),
+            "list_final",
         );
+    });
+
+    test("cancel_remaining cancels the root and spares finished children", () => {
+        const todos = accepts(
+            [
+                root(1, {
+                    children: [
+                        child(1.1, { status: "cancelled" }),
+                        child(1.2, { status: "cancelled" }),
+                        child(1.3, { status: "completed" }),
+                        child(1.4, { status: "cancelled" }),
+                        child(1.5, { status: "cancelled" }),
+                    ],
+                }),
+            ],
+            update({ id: 1, status: "cancelled", cancel_remaining: true }),
+        );
+        expect(todos[0]?.status).toBe("cancelled");
+        // A finished child is never destroyed by cancelling its container.
         expect(todos[0]?.children?.map((item) => item.status)).toEqual([
             "cancelled",
             "cancelled",
