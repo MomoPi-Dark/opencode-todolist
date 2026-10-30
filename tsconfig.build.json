@@ -16,6 +16,8 @@
     ],
     "exclude": [
         "dist",
+        "src/gui.tsx",
+        "gui-experimental.cjs",
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
         "src/**/*.spec.ts",

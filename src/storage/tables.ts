@@ -133,11 +133,3 @@ export const todoItemDependency = sqliteTable(
     ),
   ],
 );
-
-export const schema = {
-  todoSession,
-  todoItem,
-  tag,
-  todoItemTag,
-  todoItemDependency,
-};

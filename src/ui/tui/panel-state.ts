@@ -1,17 +1,14 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { Plugin } from "@opencode/plugin/tui";
-import type { TodoRootItem } from "../schemas/todo/item";
-import {
-  createTodoSubscription,
-  type TodoSubscription,
-} from "../rpc";
-import { formatElapsed } from "../todos/utils/continue-prompt";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import type { TodoRootItem } from "../../schemas/todo/item";
+import { createTodoSubscription, type TodoSubscription } from "../../rpc";
+import { formatElapsed } from "../../todos/utils/continue-prompt";
 import {
   getTodoDisplaySummary,
   type TodoDisplaySummary,
-} from "../todos/utils/display";
-import { TodoDurations } from "../todos/utils/durations";
-import { buildTodoRows, type TodoRow } from "../todos/utils/rows";
+} from "../../todos/utils/display";
+import { TodoDurations } from "../../todos/utils/durations";
+import { buildTodoRows, type TodoRow } from "../../todos/utils/rows";
 
 /**
  * The non-visual half of the todo panel: the RPC subscription, the expansion
@@ -33,10 +30,14 @@ export interface PanelState {
   readonly expandedIds: () => readonly number[];
   readonly manualRootToggles: () => readonly number[];
   readonly setExpandedIds: (
-    next: readonly number[] | ((current: readonly number[]) => readonly number[]),
+    next:
+      | readonly number[]
+      | ((current: readonly number[]) => readonly number[]),
   ) => void;
   readonly setManualRootToggles: (
-    next: readonly number[] | ((current: readonly number[]) => readonly number[]),
+    next:
+      | readonly number[]
+      | ((current: readonly number[]) => readonly number[]),
   ) => void;
   /** Rows with collapse applied; the caller attaches elapsed time. */
   readonly rows: () => readonly TodoRow[];

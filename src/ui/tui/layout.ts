@@ -1,4 +1,4 @@
-import { TodoTree } from "../todos/todo-tree";
+import { TodoTree } from "../../todos/todotree";
 
 /** Rendered prefix of an error detail row. */
 export const ERROR_PREFIX = "↳ error: ";
@@ -13,9 +13,7 @@ export function RowWidth(row: {
     id?: number;
     content: string;
     depth: number;
-    status?: string;
     elapsed?: string;
-    isExpandable?: boolean;
 }): number {
     const indent = row.depth > 0 ? 2 : 0;
     const label =

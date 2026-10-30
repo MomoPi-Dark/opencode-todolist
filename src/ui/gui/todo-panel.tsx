@@ -1,10 +1,17 @@
 import { usePlugin } from "@opencode/plugin/gui";
 import { For, Show, createMemo, createSignal } from "solid-js";
-import { Todos, type TodoView } from "../rpc";
-import { isOpenStatus } from "../schemas/todo/status";
-import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
-import { TodoDurations } from "../todos/utils/durations";
-import { buildTodoRows } from "../todos/utils/rows";
+import { Todos, type TodoView } from "../../rpc";
+import { isOpenStatus } from "../../schemas/todo/status";
+import {
+  CLEAR_DIALOG,
+  clearDialogAnswer,
+} from "../../todos/utils/clear-dialog";
+import {
+  continuePrompt,
+  formatElapsed,
+} from "../../todos/utils/continue-prompt";
+import { TodoDurations } from "../../todos/utils/durations";
+import { buildTodoRows } from "../../todos/utils/rows";
 import { BASE, DANGER, FAINT, MUTED, STATUS_COLOR } from "./color";
 
 const STATUS_ICON = {
@@ -62,24 +69,21 @@ export function TodoPanel(props: Props) {
   const clearTodos = async () => {
     const sessionID = props.sessionID();
     const ok = await ctx.dialogs.confirm({
-      title: "Clear the todo list?",
-      description:
-        "Every item of this session is removed from the stored list.",
-      confirm: "Clear",
+      title: CLEAR_DIALOG.title,
+      description: CLEAR_DIALOG.description,
+      confirm: CLEAR_DIALOG.accept,
+      cancel: CLEAR_DIALOG.cancel,
       danger: true,
     });
-    if (!ok) return;
 
     try {
       const res = await ctx.client.rpc(Todos).clear({
         sessionID,
         guard: "disable",
+        ui: clearDialogAnswer(ok),
       });
       if (!res.ok) {
-        ctx.toast.show({
-          title: "Todo clear",
-          description: res.error.message,
-        });
+        showClearError(res.error.message);
         return;
       }
     } catch (error) {

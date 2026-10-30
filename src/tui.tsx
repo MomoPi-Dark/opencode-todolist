@@ -1,6 +1,6 @@
 import { Plugin } from "@opencode/plugin/tui";
 import { RendererContext } from "@opentui/solid";
-import { TodoProgress } from "./tui/todo-panel";
+import { TodoProgress } from "./ui/tui/todo-panel";
 
 export default Plugin.define({
   id: "todolist.tui",
@@ -15,12 +15,6 @@ export default Plugin.define({
         );
       },
     });
-    if (process.env.TODO_DEBUG) {
-      context.ui.toast.show({
-        message: "Todolist loaded",
-        variant: "success",
-      });
-    }
     return () => {
       releaseSlot();
     };

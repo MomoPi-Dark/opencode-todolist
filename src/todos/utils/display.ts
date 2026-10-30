@@ -1,6 +1,6 @@
-import { TodoRootItem } from "../schemas/todo/item";
-import type { TodoStatus } from "../schemas/todo/status";
-import { TodoTree } from "./todo-tree";
+import { TodoRootItem } from "../../schemas/todo/item";
+import type { TodoStatus } from "../../schemas/todo/status";
+import { TodoTree } from "../todotree";
 
 export interface TodoDisplayItem {
   id: number;
@@ -34,20 +34,6 @@ export function getStatusIcon(status: TodoStatus): string {
   }
 }
 
-export function hasOpenTodos(todos: readonly TodoRootItem[]): boolean {
-    return TodoTree.hasOpen(todos);
-}
-
-export const openTodosError = (action: "create" | "clear"): Error =>
-  new Error(
-    [
-      `Cannot ${action}: the current list still has open todos (pending, in_progress or error).`,
-      "",
-      'Use "update" to set every open todo to completed or cancelled first.',
-      'Use "cancel_remaining" with status cancelled to drop the rest of a root in one step.',
-    ].join("\n"),
-  );
-
 export function getTodoDisplaySummary(
   todos: TodoRootItem[],
 ): TodoDisplaySummary | null {
@@ -60,11 +46,14 @@ export function getTodoDisplaySummary(
   const items: TodoDisplayItem[] = [];
 
   for (const parent of todos) {
+    // A root that owns subtasks is a container: it shows the status its
+    // children add up to, not whatever was stored on the root.
+    const rootStatus = TodoTree.deriveRootStatus(parent);
     items.push({
       id: parent.id,
       content: parent.content,
-      icon: getStatusIcon(parent.status),
-      status: parent.status,
+      icon: getStatusIcon(rootStatus),
+      status: rootStatus,
       depth: 0,
       ...(parent.note ? { note: parent.note } : {}),
     });

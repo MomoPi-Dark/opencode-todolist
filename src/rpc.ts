@@ -1,9 +1,5 @@
 import type { OpenCodeClient } from "@opencode/client";
 import { Rpc } from "@opencode/plugin/rpc";
-import type { TodoRootItem } from "./schemas/todo/item";
-import type { TodoDisplayItem } from "./todos/utils/display";
-import { TodoTree } from "./todos/todotree";
-import { getStatusIcon } from "./todos/utils/display";
 import {
     SessionIdSchema,
     TodoRpcClearInputSchema,
@@ -12,6 +8,9 @@ import {
     TodoRpcUpdateInputSchema,
 } from "./schemas/rpc/input";
 import { TodoOperationOutputSchema } from "./schemas/rpc/output";
+import type { TodoRootItem } from "./schemas/todo/item";
+import { TodoTree } from "./todos/todotree";
+import { getStatusIcon, type TodoDisplayItem } from "./todos/utils/display";
 
 export const Todos = Rpc.define({
     id: "todos",
@@ -40,67 +39,41 @@ export const Todos = Rpc.define({
     },
 });
 
-/** The slice of the OpenCode client this module touches. */
 export type TodoClient = Pick<OpenCodeClient, "rpc">;
 
 export interface WatchTodosOptions {
-    /**
-     * Read at call time. The OpenCode client is replaced after a server restart,
-     * so capturing it once would leave the listener bound to a dead client.
-     */
     client: () => TodoClient;
     sessionID?: () => string | undefined;
     onChange: (sessionID: string) => void;
 }
 
 export function watchTodos(options: WatchTodosOptions): () => void {
-    return options.client().rpc(Todos).events.on("changed", (event) => {
-        const target = options.sessionID?.();
-        if (target === undefined || event.data.sessionID === target) {
-            options.onChange(event.data.sessionID);
-        }
-    });
+    return options
+        .client()
+        .rpc(Todos)
+        .events.on("changed", (event) => {
+            const target = options.sessionID?.();
+            if (target === undefined || event.data.sessionID === target) {
+                options.onChange(event.data.sessionID);
+            }
+        });
 }
 
-/** What the subscription needs to talk to the server. */
 export interface TodoSubscriptionOptions {
-    /** Read at call time: the client is replaced after a server restart. */
     client: () => TodoClient;
     sessionID: () => string | undefined;
 }
 
-/**
- * Where results go. The caller owns all state; nothing is kept here, so a caller
- * that wants the latest list stores it in its own signal.
- */
 export interface TodoSubscriptionHandlers {
-    /** The latest list, or `undefined` when the session is unknown. */
     onData: (todos: TodoRootItem[] | undefined) => void;
-    /** A read or listener failed. Delivery is not stopped by this. */
     onError?: (error: unknown) => void;
 }
 
 export interface TodoSubscription {
-    /**
-     * Re-reads now and re-arms the `changed` listener with the current client.
-     * Call it after the server reconnects: subscriptions are live only, so
-     * events emitted while the connection was down are lost.
-     */
     refresh: () => void;
-    /** Stops everything. No handler is called afterwards. Idempotent. */
     dispose: () => void;
 }
 
-/**
- * One data path for both frontends: initial read, live `changed` events and
- * cleanup. The TUI and the GUI used to each hand-roll this; keeping it in one
- * place is what makes them behave identically.
- *
- * Handlers are the only output. There is no stored value and no open/close
- * lifecycle: the transport is an HTTP read per load, not a persistent socket.
- *
- * Framework-free on purpose: both panels wire their own reactivity around it.
- */
 export function createTodoSubscription(
     options: TodoSubscriptionOptions,
     handlers: TodoSubscriptionHandlers,
@@ -115,11 +88,11 @@ export function createTodoSubscription(
             return;
         }
 
-        void options.client()
+        void options
+            .client()
             .rpc(Todos)
             .read({ sessionID: sid })
             .then((res) => {
-                // A reply can land after `dispose()`; the guard keeps it silent.
                 if (!disposed) handlers.onData(res.ok ? res.todos : undefined);
             })
             .catch((error) => {
@@ -127,14 +100,11 @@ export function createTodoSubscription(
             });
     };
 
-    /** Re-reads and re-arms in one step, so the two can never drift apart. */
     const refresh = () => {
         if (disposed) return;
-
         unwatch?.();
         const sid = options.sessionID();
         load(sid);
-
         unwatch = watchTodos({
             client: options.client,
             sessionID: options.sessionID,
@@ -162,17 +132,16 @@ export interface TodoView {
     items: TodoViewItem[];
 }
 
-
 export function toTodoView(todos: TodoRootItem[]): TodoView {
-    const stats = TodoTree.calculateStats(todos);
     const items: TodoViewItem[] = [];
 
     for (const parent of todos) {
+        const rootStatus = TodoTree.deriveRootStatus(parent);
         items.push({
             id: parent.id,
             content: parent.content,
-            icon: getStatusIcon(parent.status),
-            status: parent.status,
+            icon: getStatusIcon(rootStatus),
+            status: rootStatus,
             depth: 0,
             ...(parent.note ? { note: parent.note } : {}),
         });
@@ -189,8 +158,8 @@ export function toTodoView(todos: TodoRootItem[]): TodoView {
     }
 
     return {
-        completed: stats.completedSubTasks,
-        total: stats.totalSubTasks,
+        completed: items.filter((item) => item.status === "completed").length,
+        total: items.length,
         items,
     };
 }

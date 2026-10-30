@@ -202,12 +202,18 @@ export class TodoRules {
             );
         }
 
-        const firstOpenIndex = todos.findIndex((root) => !isFinal(root.status));
+        const firstOpenIndex = todos.findIndex((root) =>
+            root.children?.length
+                ? !isFinal(TodoTree.deriveRootStatus(root))
+                : !isFinal(root.status),
+        );
 
         // Reachable only from a stored list where a closed root still holds an
         // open subtask: every root is final, so the work belongs to a task that
         // was already dropped or finished. Editing it would resurrect that root.
-        if (firstOpenIndex === -1 && !reopening) {
+        // `cancel_remaining` is the one deliberate exception: the user is
+        // dropping the whole container, not resurrecting its work.
+        if (firstOpenIndex === -1 && !reopening && update.cancel_remaining !== true) {
             return fail(
                 "list_final",
                 "Every root is already completed or cancelled, so there is nothing left to update. Create a new todo instead.",
@@ -219,7 +225,8 @@ export class TodoRules {
         if (
             targetRootIndex !== firstOpenIndex &&
             !reopening &&
-            !this.holdsError(location.root)
+            !this.holdsError(location.root) &&
+            update.cancel_remaining !== true
         ) {
             const blocking = todos[firstOpenIndex];
             return fail(
@@ -239,8 +246,17 @@ export class TodoRules {
         }
 
         if (update.status === "in_progress") {
+            // A container's status follows its children, so "another root is
+            // running" reads the derived value, never the stored one.
+            const statusOf = (root: TodoRootItem) =>
+                (root.children?.length ?? 0) > 0
+                    ? TodoTree.deriveRootStatus(root)
+                    : root.status;
+
             const busyRoot = todos.find(
-                (root) => root.status === "in_progress" && root.id !== location.root.id,
+                (root) =>
+                    root.id !== location.root.id &&
+                    statusOf(root) === "in_progress",
             );
             if (busyRoot) {
                 return fail(

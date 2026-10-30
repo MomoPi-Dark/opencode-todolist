@@ -154,6 +154,46 @@ export class TodoTree {
     }
 
     /**
+     * The status a root shows.
+     *
+     * A root that owns subtasks is a container: it has no status of its own, so
+     * one is derived from the children. Any open child keeps the container open;
+     * one running child makes it running; only when every child is finished does
+     * the container finish. A root without children owns its status outright.
+     *
+     * Cancelled children are not work, so they are ignored — a container whose
+     * remaining children are all done is done.
+     */
+    static deriveRootStatus(
+        root: TodoRootItem,
+        children: readonly TodoChildren[] = root.children ?? [],
+    ): TodoStatus {
+        if (children.length === 0) return root.status;
+
+        // An explicitly cancelled container is final. A leftover child must not
+        // resurrect a plan the user already dropped.
+        if (root.status === "cancelled") return "cancelled";
+
+        const active = children.filter((child) => child.status !== "cancelled");
+
+        // Every child cancelled: the container is cancelled too, otherwise it
+        // would stay open forever and the list could never be cleared.
+        if (active.length === 0) return "cancelled";
+
+        if (active.some((child) => child.status === "in_progress"))
+            return "in_progress";
+        if (active.some((child) => child.status === "error")) return "error";
+        if (active.some((child) => isOpenStatus(child.status))) return "pending";
+
+        // Every remaining child finished. A completed child locks the container
+        // completed; work that is only cancelled does not.
+        if (active.every((child) => child.status === "completed"))
+            return "completed";
+
+        return root.status;
+    }
+
+    /**
      * Every row that actually holds work: subtasks when a root has them,
      * otherwise the root itself. Cancelled rows are not work and are dropped.
      *
@@ -177,7 +217,6 @@ export class TodoTree {
                 });
                 continue;
             }
-
             for (const child of children) {
                 leaves.push({
                     id: child.id,
@@ -202,7 +241,9 @@ export class TodoTree {
     static hasOpen(todos: readonly TodoRootItem[]): boolean {
         return todos.some(
             (root) =>
-                isOpenStatus(root.status) ||
+                // A container is open only while its children are open; the
+                // stored root status is stale by design.
+                isOpenStatus(TodoTree.deriveRootStatus(root)) ||
                 (root.children ?? []).some((child) => isOpenStatus(child.status)),
         );
     }
@@ -212,7 +253,7 @@ export class TodoTree {
     static calculateStats(todos: TodoList): TodoStats {
         const totalSteps = todos.length;
         const completedSteps = todos.filter(
-            (root) => root.status === "completed",
+            (root) => TodoTree.deriveRootStatus(root) === "completed",
         ).length;
 
         const leaves = TodoTree.leaves(todos);
@@ -291,10 +332,6 @@ export class TodoTree {
             if (activeChildren.length > 1) {
                 return `Task '${root.id}' has ${activeChildren.length} subtasks 'in_progress'. At most 1 is allowed.`;
             }
-
-            if (activeChildren.length === 1 && root.status !== "in_progress") {
-                return `Subtask '${activeChildren[0]}' is 'in_progress' but parent '${root.id}' is '${root.status}'. Set parent to 'in_progress' first.`;
-            }
         }
 
         if (activeRoots.length > 1) {
@@ -323,23 +360,11 @@ export class TodoTree {
                 continue;
             }
 
-            const hasUnfinishedChildren = children.some((child) =>
-                isOpenStatus(child.status),
-            );
-
-            if (root.status === "completed" && hasUnfinishedChildren) {
-                return {
-                    valid: false,
-                    error: `Task '${root.id}' cannot be marked 'completed' while it still has pending, in-progress or errored subtasks.`,
-                };
-            }
-
-            const allChildrenCompleted = children.every(
-                (child) => child.status === "completed",
-            );
+            // A root with subtasks is a container: its status is not the
+            // caller's to set, it is read from the children.
             normalized.push({
                 ...root,
-                status: allChildrenCompleted ? "completed" : root.status,
+                status: TodoTree.deriveRootStatus(root, children),
             });
         }
 
@@ -367,15 +392,19 @@ export class TodoTree {
 
         let firstOpen: TodoRootItem | undefined;
         for (const root of todos) {
+            // Containers follow their children, so order is decided by the
+            // derived status; the stored one is stale by design.
+            const status = TodoTree.deriveRootStatus(root);
+
             if (!firstOpen) {
-                if (!isFinal(root.status)) firstOpen = root;
+                if (!isFinal(status)) firstOpen = root;
                 continue;
             }
 
             // Past the first open root: a later root must still be untouched.
-            if (root.status === "pending" || root.status === "error") continue;
+            if (status === "pending" || status === "error") continue;
 
-            return `Task '${root.id}' is '${root.status}' but earlier task '${firstOpen.id}' is still '${firstOpen.status}'. Roots run in order: finish or cancel '${firstOpen.id}' first.`;
+            return `Task '${root.id}' is '${status}' but earlier task '${firstOpen.id}' is still '${TodoTree.deriveRootStatus(firstOpen)}'. Roots run in order: finish or cancel '${firstOpen.id}' first.`;
         }
 
         return null;
@@ -466,9 +495,12 @@ export class TodoTree {
     }
 
     private static rootIcon(root: TodoRootItem, hasChildError: boolean): string {
-        return hasChildError || root.status === "error" || root.status === "cancelled"
-            ? "[!]"
-            : TodoTree.icon(root.status);
+        // A failed or cancelled child marks the container without destroying
+        // its siblings: the icon reports the problem, the rows stay intact.
+        const derived = TodoTree.deriveRootStatus(root);
+        if (hasChildError || derived === "error" || derived === "cancelled")
+            return "[!]";
+        return TodoTree.icon(derived);
     }
 
     /**

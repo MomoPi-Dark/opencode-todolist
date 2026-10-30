@@ -30,6 +30,7 @@ async function registerTodoRpc(ctx: Plugin.Context) {
             return clearSessionTodos(input.sessionID, {
                 guard: input.guard,
                 rpc: holder.rpc,
+                ui: input.ui,
             });
         },
     });

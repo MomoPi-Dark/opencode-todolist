@@ -8,17 +8,25 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { Glyph } from "../icons/glyph";
-import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../icons/icons";
-import { Todos } from "../rpc";
-import { isOpenStatus, type TodoStatus } from "../schemas/todo/status";
-import { TodoTree } from "../todos/todotree";
-import { continuePrompt, formatElapsed } from "../todos/utils/continue-prompt";
-import { TodoDurations } from "../todos/utils/durations";
-import type { TodoDisplayItem } from "../todos/utils/display";
-import { error as logError } from "../utils/log";
-import { createPanelState } from "./panel-state";
+import { Glyph } from "../../icons/glyph";
+import { ARROW_DOWN, ARROW_RIGHT, CLEAR, CONTINUE } from "../../icons/icons";
+import { Todos } from "../../rpc";
+import { isOpenStatus, type TodoStatus } from "../../schemas/todo/status";
+import { TodoTree } from "../../todos/todotree";
+import {
+  CLEAR_DIALOG,
+  clearDialogAnswer,
+} from "../../todos/utils/clear-dialog";
+import {
+  continuePrompt,
+  formatElapsed,
+} from "../../todos/utils/continue-prompt";
+import { getStatusIcon } from "../../todos/utils/display";
+import { TodoDurations } from "../../todos/utils/durations";
+import { error as logError } from "../../utils/log";
+import { asBusyEvent, nextBusy } from "../busy";
 import { ERROR_PREFIX, ErrorRowWidth, RowWidth } from "./layout";
+import { createPanelState } from "./panel-state";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 100;
@@ -93,16 +101,12 @@ export function NextFollowScrollTop(
   return Math.min(Math.max(0, targetTop), maxTop);
 }
 
-export function TodoList(props: {
+function TodoList(props: {
   rows: TodoListRow[];
   expandedIds?: readonly number[];
-  scrollbarColor?: ColorInput;
   arrowColor?: ColorInput;
-  maxRows?: number;
-  activeIcon?: () => string;
   onToggleRow?: (id: number) => void;
   onToggleRoot?: (id: number) => void;
-  ref?: (el: ScrollBoxRenderable) => void;
 }) {
   const rowId = (id: number) => `todo-row-${id}`;
   const [box, setBox] = createSignal<ScrollBoxRenderable>();
@@ -110,11 +114,6 @@ export function TodoList(props: {
   const entries = createMemo(() =>
     TodoListEntries(props.rows, props.expandedIds ?? []),
   );
-
-  const iconOf = (row: TodoListRow) =>
-    row.status === "in_progress"
-      ? (props.activeIcon?.() ?? row.icon)
-      : row.icon;
 
   const followActiveRow = (el: ScrollBoxRenderable) => {
     if (el.isDestroyed) return;
@@ -135,38 +134,19 @@ export function TodoList(props: {
       internalOnSizeChange?.call(el.content);
       followActiveRow(el);
     };
-    props.ref?.(el);
   };
 
-  // `entries()` already changes whenever rows or expanded ids change.
   createEffect(() => {
     entries();
     const el = box();
     if (el) followActiveRow(el);
   });
 
-  const scrollbarOptions = () =>
-    props.scrollbarColor
-      ? {
-          verticalScrollbarOptions: {
-            trackOptions: {
-              backgroundColor: props.scrollbarColor,
-              foregroundColor: props.scrollbarColor,
-            },
-          },
-        }
-      : {};
-
   return (
     <scrollbox
       ref={attach}
       width="auto"
-      height={
-        props.maxRows
-          ? Math.min(entries().length, props.maxRows)
-          : entries().length
-      }
-      {...scrollbarOptions()}
+      height={entries().length}
       horizontalScrollbarOptions={{ visible: false }}
     >
       <box flexDirection="column" flexShrink={0}>
@@ -196,7 +176,7 @@ export function TodoList(props: {
                     <span>{"  "}</span>
                   </Show>
                   <span style={{ fg: entry.row.iconColor }}>
-                    {iconOf(entry.row)}{" "}
+                    {entry.row.icon}{" "}
                   </span>
                   <span style={{ fg: entry.row.textColor }}>
                     {TodoTree.formatIdPrefix(entry.row.id, entry.row.depth)}
@@ -235,9 +215,7 @@ export function TodoList(props: {
                 }}
               >
                 <text wrapMode="none">
-                  <span
-                    style={{ fg: props.arrowColor ?? props.scrollbarColor }}
-                  >
+                  <span style={{ fg: props.arrowColor }}>
                     {entry.row.depth > 0 ? "    " : "  "}
                     {ERROR_PREFIX}
                   </span>
@@ -281,10 +259,9 @@ export function TodoProgress(props: {
   const [isCollapsed, setIsCollapsed] = createSignal(false);
   const [isContinuePending, setIsContinuePending] = createSignal(false);
   const [animFrame, setAnimFrame] = createSignal(0);
-  const todos = state.todos;
+
   const summary = state.summary;
   const expandedIds = state.expandedIds;
-  const manualRootToggles = state.manualRootToggles;
   const setExpandedIds = state.setExpandedIds;
   const setManualRootToggles = state.setManualRootToggles;
   const tracker = new TodoDurations(Date.now, formatElapsed);
@@ -307,24 +284,14 @@ export function TodoProgress(props: {
 
   const unsubscribe = context.data.listen(({ details }) => {
     const sid = sessionID();
-    switch (details.type) {
-      case "session.execution.started":
-      case "session.execution.interrupted":
-      case "session.execution.succeeded":
-      case "session.execution.failed":
-      case "session.idle":
-        if (!sid || details.data.sessionID === sid) {
-          setIsRunning(details.type === "session.execution.started");
-          setIsContinuePending(false);
-        }
-        break;
-      case "session.status":
-        if (!sid || details.data.sessionID === sid) {
-          setIsRunning(details.data.status.type !== "idle");
-          setIsContinuePending(false);
-        }
-        break;
-    }
+    // One shared mapping for both panels: `busy.ts` owns which event means
+    // "still working", so TUI and GUI can never disagree again.
+    const busyEvent = asBusyEvent(details);
+    if (!busyEvent) return;
+    if (sid && busyEvent.sessionID !== sid) return;
+
+    setIsRunning(nextBusy(busyEvent) ?? false);
+    setIsContinuePending(false);
   });
   onCleanup(() => {
     try {
@@ -344,7 +311,8 @@ export function TodoProgress(props: {
     onCleanup(() => clearInterval(id));
   });
 
-  const activeIcon = () => (isRunning() ? SPINNER_FRAMES[animFrame()]! : "-");
+  const activeIcon = (): string =>
+    isRunning() ? (SPINNER_FRAMES[animFrame()] ?? SPINNER_FRAMES[0]!) : "-";
 
   const activeItem = createMemo(() => {
     const items = summary()?.items;
@@ -385,12 +353,18 @@ export function TodoProgress(props: {
     if (isCollapsed()) return [];
     const items = summary()?.items ?? [];
     const durations = tracker.observe(items);
+    // Read the animation signals here: a row's icon is baked into the memo, so
+    // without this dependency the spinner would never advance per frame.
+    const spinner = activeIcon();
 
     return state.rows().map(
       ({ item, expandable }): TodoListRow => ({
         id: item.id,
         content: item.content,
-        icon: (item as TodoDisplayItem).icon,
+        icon:
+          item.status === "in_progress"
+            ? spinner
+            : (item.icon ?? getStatusIcon(item.status)),
         iconColor: getStatusColor(item.status),
         textColor: getTextColor(item.status),
         depth: item.depth,
@@ -436,28 +410,22 @@ export function TodoProgress(props: {
     const sid = sessionID();
     if (!sid) return;
 
-    // `confirm` resolves to undefined when the dialog is dismissed without a
-    // choice, so anything short of an explicit true leaves the list alone.
     const ok = await context.ui.dialog.confirm({
-      title: "Clear the todo list?",
-      message: "Every item of this session is removed from the stored list.",
-      label: { confirm: "Clear", cancel: "Cancel" },
+      title: CLEAR_DIALOG.title,
+      message: CLEAR_DIALOG.description,
     });
-    if (ok !== true) return;
 
     try {
       const res = await context.client.rpc(Todos).clear({
         sessionID: sid,
-        // The user confirmed in the dialog above; the open-list guard is for the
-        // tool, where a model could erase a half-done plan on its own.
         guard: "disable",
+        ui: clearDialogAnswer(ok ?? false),
       });
       if (!res.ok) {
+        if (res.error.code === "clear_cancelled") return;
         showClearError(res.error.message || "Could not clear list.");
         return;
       }
-      // No manual refresh: the session handler emits `changed`, and the shared
-      // subscription reloads the list.
     } catch (error) {
       showClearError(
         (error as { message?: string })?.message ?? "Could not clear list.",
@@ -581,11 +549,10 @@ export function TodoProgress(props: {
               flexDirection="row"
               onMouseOver={clearHover.onMouseOver}
               onMouseOut={clearHover.onMouseOut}
-              onMouseDown={(e) => {
-                if (e.button === 0) {
-                  e.stopPropagation();
-                  void clearTodos();
-                }
+              onMouseUp={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void clearTodos();
               }}
             >
               <Glyph
@@ -603,7 +570,6 @@ export function TodoProgress(props: {
               <TodoList
                 rows={rows()}
                 expandedIds={expandedIds()}
-                activeIcon={activeIcon}
                 arrowColor={theme().text.muted}
                 onToggleRow={toggleRowNote}
                 onToggleRoot={toggleRoot}
