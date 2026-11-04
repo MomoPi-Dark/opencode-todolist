@@ -56,18 +56,18 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
-    "@types/node": "^26.6.5",
-    "drizzle-kit": "^1.0.0-rc.4",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^1.0.0-rc.5-ab785fc",
     "tsc-watch": "^7.2.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vite-plugin-solid": "^2.11.14"
+    "vite-plugin-solid": "^2.11.15"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.0",
     "@opentui/core": "0.7.0",
     "@opentui/solid": "0.7.0",
-    "drizzle-orm": "^1.0.0-rc.4",
+    "drizzle-orm": "^1.0.0-rc.5-ab785fc",
     "solid-js": "1.9.17",
     "zod": "^4.6.7"
   },
