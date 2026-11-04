@@ -107,6 +107,7 @@ describe("layout widths", () => {
   test("accounts for row prefixes, subtask indentation, and error details", () => {
     expect(RowWidth(row())).toBe(12);
     expect(RowWidth(row({ id: 1.1, content: "schema", depth: 1 }))).toBe(14);
+    expect(RowWidth({ ...row(), chevron: true })).toBe(14);
     expect(ErrorRowWidth({ error: "hi", depth: 0 })).toBe(13);
     expect(ErrorRowWidth({ error: "hi", depth: 1 })).toBe(15);
     expect(ERROR_PREFIX).toBe("↳ error: ");

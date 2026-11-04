@@ -19,7 +19,7 @@ export class TodoDurations {
   constructor(
     private readonly now: () => number = Date.now,
     private readonly format: (ms: number) => string = (ms) => `${ms}ms`,
-  ) {}
+  ) { }
 
   /** Feeds the current list and returns the elapsed text for finished items. */
   observe(items: readonly DurationTracked[]): ReadonlyMap<number, string> {
@@ -47,7 +47,6 @@ export class TodoDurations {
         continue;
       }
 
-      // Anything else stops the clock: the item is no longer being worked on.
       this.starts.delete(item.id);
     }
 

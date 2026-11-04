@@ -17,23 +17,8 @@ import {
 } from "./rpc";
 import { isOpenStatus } from "./schemas/todo/status";
 import { asBusyEvent, nextBusy } from "./ui/busy";
+import { BUSY_EVENT_TYPES } from "./ui/events";
 import { TodoPanel } from "./ui/gui/todo-panel";
-
-/**
- * The event types this panel subscribes to.
- *
- * `subscribe` needs the list up front, unlike the TUI's `data.listen`, so it
- * belongs to the GUI. Every entry maps to a case in `asBusyEvent`; adding one
- * there still means adding it here.
- */
-const BUSY_EVENT_TYPES = [
-  "session.execution.started",
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
-  "session.idle",
-  "session.status",
-] as const;
 
 export default Plugin.define({
   i18n: {
@@ -111,8 +96,6 @@ export default Plugin.define({
     const running = new AbortController();
     void (async () => {
       const events = ctx.client.event.subscribe({
-        // The subscription list comes from `busy.ts`, so a new event is added in
-        // exactly one place and the two panels stay in step.
         types: BUSY_EVENT_TYPES,
         signal: running.signal,
       });
