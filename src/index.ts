@@ -52,7 +52,7 @@ export default Plugin.define({
             tools.add({
                 name: "manage_todo_list",
                 description:
-                    "Track multi-step work (3+ steps) in a hierarchical todo list. Operations: read, create, update, clear. Supports status, priority, notes, and subtasks; read first when unsure of the current state.",
+                    "Track multi-step work (3+ steps) in a hierarchical todo list. Operations: read, create, update, clear. Supports status, priority, notes, and subtasks; read first when unsure of the current state. Batch every change into ONE update call (up to 10 updates): finishing the current item and starting the next belong in the same call.",
                 input: TodoInputToolSchema,
                 output: TodoOutputToolSchema,
                 options: { codemode: false },

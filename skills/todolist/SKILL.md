@@ -93,8 +93,9 @@ Supported scopes:
 
 ### `update`
 
-Update an array of **1–10** updates, even when changing one item. The array is applied in order
-and each id may appear only once:
+Batch every change into one call: an array of **1–10** updates. Finishing the
+current item and starting the next belong in the same array, not two calls. The
+array is applied in order and each id may appear only once:
 
 ```json
 {
@@ -112,9 +113,10 @@ Every update must change at least one of `status`, `content`, `priority`, or
 requires `status: "cancelled"` and cancels remaining pending children under
 the target root.
 
-Only one update in a call may set `status: "in_progress"`. Use array order to
-finish one item and then start the next; send a follow-up call when another
-`in_progress` status is needed. A failed batch is not partially applied.
+Only one update in a call may set `status: "in_progress"`; every other change
+belongs in that same call. Use array order to finish one item and then start
+the next. A second call is only for starting a further item after the current
+one is already running. A failed batch is not partially applied.
 
 The list validator also requires:
 

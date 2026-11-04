@@ -84,7 +84,7 @@ export const TodoUpdateOperationSchema = z
                 error: `At most ${MAX_UPDATES} updates per call; send the rest in a follow-up call.`,
             })
             .describe(
-                `An array of at most ${MAX_UPDATES} updates, applied in order. Each id may appear once.`,
+                `Batch every change into one call: up to ${MAX_UPDATES} updates applied in order — finishing an item and starting the next belong together. Each id may appear once.`,
             ),
     })
     .strict()
@@ -107,7 +107,7 @@ export const TodoUpdateOperationSchema = z
                     code: "custom",
                     path: ["updates", i, "status"],
                     message:
-                        "Only one update per call may set status in_progress; start the next item in a follow-up call",
+                        "Only one update per call may set status in_progress; keep the other changes in the same call",
                 });
             }
         });

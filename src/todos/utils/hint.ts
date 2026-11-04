@@ -227,7 +227,7 @@ export function buildTodoHint(
       "Do not end your turn or write a final summary while items are open, " +
       "unless you are blocked or need user input. " +
       "Call manage_todo_list [read] for the full list. " +
-      "Change items with manage_todo_list [update]; use [write] only to initialize an empty list or to clear it with []. " +
+      "Change items with manage_todo_list [update], batching every change into one call: finishing the current item and starting the next belong in the same `updates` array. " +
       "Ignore only if the user clearly changed topic or asked to stop or pause.</todo_rules>"
     );
   } catch {
