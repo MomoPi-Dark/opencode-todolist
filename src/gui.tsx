@@ -21,9 +21,6 @@ import { BUSY_EVENT_TYPES } from "./ui/events";
 import { TodoPanel } from "./ui/gui/todo-panel";
 
 export default Plugin.define({
-  i18n: {
-    en: {},
-  },
   setup(ctx) {
     const panelKey = `${ctx.id}:todos`;
 
@@ -39,6 +36,7 @@ export default Plugin.define({
     });
 
     let subscription: TodoSubscription | undefined;
+    let subscribedID: string | undefined;
 
     const server = () =>
       ctx.servers
@@ -55,6 +53,12 @@ export default Plugin.define({
 
     const subscribeTodos = (sessionID: string) => {
       subscription?.dispose();
+
+      if (subscribedID && subscribedID !== sessionID) {
+        setViews(subscribedID, undefined);
+      }
+      subscribedID = sessionID;
+
       subscription = createTodoSubscription(
         {
           client: () => {
@@ -80,12 +84,16 @@ export default Plugin.define({
       subscribeTodos(sessionID);
     };
 
-    createKeyed(() => ctx.sessions.current()?.id, refresh);
+    createKeyed(
+      () => ctx.sessions.current()?.id,
+      (id) => {
+        if (id) refresh(id);
+      },
+    );
 
     let seenConnected: boolean | undefined;
     createEffect(() => {
-      const current = server();
-      const connected = current?.connected === true;
+      const connected = server()?.connected === true;
       const wasConnected = seenConnected;
       seenConnected = connected;
       if (wasConnected === undefined) return;
@@ -102,9 +110,9 @@ export default Plugin.define({
       for await (const event of events) {
         const busyEvent = asBusyEvent(event);
         if (!busyEvent) continue;
-        const busy = nextBusy(busyEvent);
-        if (busy === undefined) continue;
-        setBusy(busyEvent.sessionID, busy);
+        const isBusy = nextBusy(busyEvent);
+        if (isBusy === undefined) continue;
+        setBusy(busyEvent.sessionID, isBusy);
       }
     })().catch(() => {});
 
@@ -120,8 +128,6 @@ export default Plugin.define({
         if (!view || view.items.length === 0) return undefined;
 
         const counts = summary(view);
-        const label = `Todos ${counts.completed}/${counts.total}`;
-
         const open = view.items.filter((item) =>
           isOpenStatus(item.status),
         ).length;
@@ -131,14 +137,14 @@ export default Plugin.define({
           : "";
 
         return {
-          label: `${label} ${activeContent}`,
+          label: [`Todos ${counts.completed}/${counts.total}`, activeContent]
+            .filter(Boolean)
+            .join(" "),
           icon: "checklist",
           tone: view.items.some((item) => item.status === "error")
             ? "danger"
             : undefined,
-          title: active
-            ? active.content
-            : `${open} open, ${counts.total - counts.completed} left`,
+          title: active ? active.content : `${open} open`,
           run: () => ctx.layout.toggle(panelKey, input.session),
         };
       },
@@ -204,6 +210,7 @@ export default Plugin.define({
     return () => {
       running.abort();
       subscription?.dispose();
+      subscription = undefined;
     };
   },
 });
