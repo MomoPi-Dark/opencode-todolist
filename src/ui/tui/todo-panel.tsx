@@ -166,31 +166,22 @@ function TodoList(props: {
                 height={1}
                 flexShrink={0}
                 width={RowWidth({ ...entry.row, chevron: true })}
-                {...{
-                  onMouseDown: (e: MouseEvent) => {
-                    if (e.button === 0) {
-                      if (entry.row.status === "error") {
-                        e.stopPropagation();
-                        props.onToggleRow?.(entry.row.id);
-                      } else if (entry.row.isExpandable) {
-                        e.stopPropagation();
-                        props.onToggleRoot?.(entry.row.id);
-                      }
+                onMouseDown={(e) => {
+                  if (e.button === 0) {
+                    e.stopPropagation();
+                    if (entry.row.status === "error") {
+                      props.onToggleRow?.(entry.row.id);
+                    } else if (entry.row.isExpandable) {
+                      props.onToggleRoot?.(entry.row.id);
                     }
-                  },
+                  }
                 }}
               >
                 <text wrapMode="none">
+                  <span>{"  "}</span>
                   <Show when={entry.row.depth > 0}>
                     <span>{"  "}</span>
                   </Show>
-                  <span style={{ fg: props.arrowColor }}>
-                    {entry.row.isExpandable
-                      ? entry.row.collapsed
-                        ? `${ARROW_RIGHT} `
-                        : `${ARROW_DOWN} `
-                      : "  "}
-                  </span>
                   <span style={{ fg: entry.row.iconColor }}>
                     {entry.row.icon}{" "}
                   </span>
@@ -223,13 +214,11 @@ function TodoList(props: {
                   error: entry.row.note ?? entry.row.content,
                   depth: entry.row.depth,
                 })}
-                {...{
-                  onMouseDown: (e: MouseEvent) => {
-                    if (e.button === 0) {
-                      e.stopPropagation();
-                      props.onToggleRow?.(entry.row.id);
-                    }
-                  },
+                onMouseDown={(e) => {
+                  if (e.button === 0) {
+                    e.stopPropagation();
+                    props.onToggleRow?.(entry.row.id);
+                  }
                 }}
               >
                 <text wrapMode="none">
@@ -280,7 +269,6 @@ export function TodoPanel(props: Props) {
     if (!continueVisible && hover() === "continue") setHover();
   });
 
-  // Icon carries the status colour; text only dims once an item is finished.
   const colors = (status: TodoStatus) => {
     const t = theme();
     return {
@@ -356,9 +344,11 @@ export function TodoPanel(props: Props) {
   const continueTodos = async () => {
     const sessionID = props.sessionID();
     const view = props.view();
+
     if (!sessionID || !view || props.busy() || isContinuePending()) return;
 
     setIsContinuePending(true);
+
     try {
       await ctx.client.session.prompt({
         sessionID,
@@ -438,13 +428,11 @@ export function TodoPanel(props: Props) {
             <box
               flexDirection="row"
               flexGrow={1}
-              {...{
-                onMouseDown: (e: MouseEvent) => {
-                  if (e.button === 0) {
-                    e.stopPropagation();
-                    setIsCollapsed((value) => !value);
-                  }
-                },
+              onMouseDown={(e) => {
+                if (e.button === 0) {
+                  e.stopPropagation();
+                  setIsCollapsed((value) => !value);
+                }
               }}
             >
               <box
@@ -497,15 +485,13 @@ export function TodoPanel(props: Props) {
                 flexDirection="row"
                 gap={1}
                 marginRight={3}
-                {...{
-                  onMouseOver: () => setHover("continue"),
-                  onMouseOut: () => setHover(),
-                  onMouseDown: (e: MouseEvent) => {
-                    if (e.button === 0) {
-                      e.stopPropagation();
-                      void continueTodos();
-                    }
-                  },
+                onMouseOver={() => setHover("continue")}
+                onMouseOut={() => setHover()}
+                onMouseDown={(e) => {
+                  if (e.button === 0) {
+                    e.stopPropagation();
+                    void continueTodos();
+                  }
                 }}
               >
                 <Glyph
@@ -526,15 +512,13 @@ export function TodoPanel(props: Props) {
             <box
               marginRight={1}
               flexDirection="row"
-              {...{
-                onMouseOver: () => setHover("clear"),
-                onMouseOut: () => setHover(),
-                onMouseDown: (e: MouseEvent) => {
-                  if (e.button === 0) {
-                    e.stopPropagation();
-                    void clearTodos();
-                  }
-                },
+              onMouseOver={() => setHover("clear")}
+              onMouseOut={() => setHover()}
+              onMouseUp={(e) => {
+                if (e.button === 0) {
+                  e.stopPropagation();
+                  void clearTodos();
+                }
               }}
             >
               <Glyph

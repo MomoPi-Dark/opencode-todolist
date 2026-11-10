@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui";
-import { createEffect, onCleanup } from "solid-js";
+import { onCleanup } from "solid-js";
 import { createStore } from "solid-js/store";
 import {
   createTodoSubscription,
@@ -14,114 +14,117 @@ import { TodoPanel } from "./ui/tui/todo-panel";
 export default Plugin.define({
   id: "todolist.tui",
   setup(ctx) {
-    const [views, setViews] = createStore<Record<string, TodoView | undefined>>(
-      {},
-    );
-    const [busy, setBusy] = createStore<Record<string, boolean>>({});
-
     const todoSubs = new Map<
       string,
       { subscription: TodoSubscription; count: number }
     >();
 
-    const refreshBusy = (id: string) => {
+    const [views, setViews] = createStore<Record<string, TodoView | undefined>>(
+      {},
+    );
+    const [busy, setBusy] = createStore<Record<string, boolean>>({});
+
+    const refreshBusy = (sessionID: string) => {
       void ctx.client.session
         .active()
-        .then((active) => setBusy(id, !!active[id]))
+        .then((active) => setBusy(sessionID, !!active[sessionID]))
         .catch(() => {});
     };
 
-    const subscribeTodos = (id: string): TodoSubscription =>
-      createTodoSubscription(
+    const subscribeTodos = (sessionID: string) => {
+      return createTodoSubscription(
         {
           client: () => ctx.client,
-          sessionID: () => id,
+          sessionID: () => sessionID,
         },
         {
-          onData: (todos) => {
-            setViews(id, todos ? toTodoView(todos) : undefined);
-          },
-          onError: () => {
-            setViews(id, undefined);
-          },
+          onData: (todos) =>
+            setViews(sessionID, todos ? toTodoView(todos) : undefined),
+          onError: () => setViews(sessionID, undefined),
         },
       );
+    };
 
-    const acquire = (id: string): (() => void) => {
-      let entry = todoSubs.get(id);
+    const acquire = (sessionID: string): (() => void) => {
+      let entry = todoSubs.get(sessionID);
+
       if (entry) {
         entry.count += 1;
       } else {
-        entry = { subscription: subscribeTodos(id), count: 1 };
-        todoSubs.set(id, entry);
+        entry = {
+          subscription: subscribeTodos(sessionID),
+          count: 1,
+        };
+        todoSubs.set(sessionID, entry);
+        refreshBusy(sessionID);
       }
-      refreshBusy(id);
 
+      const owned = entry;
       let released = false;
+
       return () => {
         if (released) return;
         released = true;
-        const current = todoSubs.get(id);
-        if (!current) return;
-        current.count -= 1;
-        if (current.count <= 0) {
-          current.subscription.dispose();
-          todoSubs.delete(id);
-          setViews(id, undefined);
+
+        owned.count -= 1;
+        if (owned.count > 0) return;
+
+        if (todoSubs.get(sessionID) === owned) {
+          todoSubs.delete(sessionID);
+          setViews(sessionID, undefined);
         }
+
+        owned.subscription.dispose();
       };
     };
 
     const refresh = (id: string) => {
       refreshBusy(id);
+
       const entry = todoSubs.get(id);
       if (!entry) return;
+
       entry.subscription.dispose();
       entry.subscription = subscribeTodos(id);
     };
 
     const running = new AbortController();
-    void (async () => {
+    (async () => {
       const events = ctx.client.event.subscribe({
         types: BUSY_EVENT_TYPES,
         signal: running.signal,
       });
       for await (const event of events) {
         const busyEvent = asBusyEvent(event);
-        if (!busyEvent) continue;
-        const isBusy = nextBusy(busyEvent);
-        if (isBusy === undefined) continue;
-        setBusy(busyEvent.sessionID, isBusy);
+        const isBusy = busyEvent && nextBusy(busyEvent);
+        if (isBusy !== undefined && busyEvent)
+          setBusy(busyEvent.sessionID, isBusy);
       }
     })().catch(() => {});
 
     const releaseSlot = ctx.ui.slot({
       append: "session.composer.top",
       render: (props) => {
-        const sessionID = () => props.sessionID as string;
+        const sessionID = props.sessionID;
 
-        createEffect(() => {
-          const id = sessionID();
-          if (!id) return;
-          onCleanup(acquire(id));
-        });
+        onCleanup(acquire(sessionID));
 
         return (
           <TodoPanel
-            sessionID={sessionID}
-            view={() => views[sessionID()]}
-            busy={() => busy[sessionID()] ?? false}
-            onRefresh={() => refresh(sessionID())}
+            sessionID={() => sessionID}
+            view={() => views[sessionID]}
+            busy={() => busy[sessionID] ?? false}
+            onRefresh={() => refresh(sessionID)}
           />
         );
       },
     });
 
     return () => {
-      releaseSlot();
       running.abort();
-      for (const { subscription } of todoSubs.values()) subscription.dispose();
+      todoSubs.forEach((entry) => entry.subscription.dispose());
       todoSubs.clear();
+      releaseSlot();
     };
   },
 });
