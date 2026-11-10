@@ -7,7 +7,7 @@ import {
   Plugin,
   type PanelTab,
 } from "@opencode/plugin/gui";
-import { createEffect } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import {
   createTodoSubscription,
@@ -28,15 +28,18 @@ export default Plugin.define({
       {},
     );
     const [busy, setBusy] = createStore<Record<string, boolean>>({});
+    const [subscription, setSubscription] = createSignal<
+      TodoSubscription | undefined
+    >(undefined);
+    const [subscribedID, setSubscribedID] = createSignal<string | undefined>(
+      undefined,
+    );
 
     const summary = (view: TodoView) => ({
       completed: view.items.filter((item) => item.status === "completed")
         .length,
       total: view.items.length,
     });
-
-    let subscription: TodoSubscription | undefined;
-    let subscribedID: string | undefined;
 
     const server = () =>
       ctx.servers
@@ -52,14 +55,17 @@ export default Plugin.define({
     };
 
     const subscribeTodos = (sessionID: string) => {
-      subscription?.dispose();
+      const subsId = subscribedID();
 
-      if (subscribedID && subscribedID !== sessionID) {
-        setViews(subscribedID, undefined);
+      subscription()?.dispose();
+
+      setSubscription(undefined);
+
+      if (subsId && subsId !== sessionID) {
+        setViews(subsId, undefined);
       }
-      subscribedID = sessionID;
 
-      subscription = createTodoSubscription(
+      const newSubs = createTodoSubscription(
         {
           client: () => {
             const current = server();
@@ -77,6 +83,8 @@ export default Plugin.define({
           },
         },
       );
+
+      setSubscription(newSubs);
     };
 
     const refresh = (sessionID: string) => {
@@ -98,21 +106,20 @@ export default Plugin.define({
       seenConnected = connected;
       if (wasConnected === undefined) return;
       if (!connected || wasConnected) return;
-      subscription?.refresh();
+      subscription()?.refresh();
     });
 
     const running = new AbortController();
-    void (async () => {
+    (async () => {
       const events = ctx.client.event.subscribe({
         types: BUSY_EVENT_TYPES,
         signal: running.signal,
       });
       for await (const event of events) {
         const busyEvent = asBusyEvent(event);
-        if (!busyEvent) continue;
-        const isBusy = nextBusy(busyEvent);
-        if (isBusy === undefined) continue;
-        setBusy(busyEvent.sessionID, isBusy);
+        const isBusy = busyEvent && nextBusy(busyEvent);
+        if (isBusy !== undefined && busyEvent)
+          setBusy(busyEvent.sessionID, isBusy);
       }
     })().catch(() => {});
 
@@ -150,19 +157,16 @@ export default Plugin.define({
       },
     });
 
-    ctx.add(
-      Command,
-      (): Command => ({
-        id: "toggle",
-        title: "Toggle todos",
-        keywords: "todo todolist checklist",
-        group: "Session",
-        section: "session",
-        bind: "mod+shift+l",
-        enabled: !!ctx.sessions.current(),
-        run: toggle,
-      }),
-    );
+    ctx.add(Command, (): Command => ({
+      id: "toggle",
+      title: "Toggle todos",
+      keywords: "todo todolist checklist",
+      group: "Session",
+      section: "session",
+      bind: "mod+shift+l",
+      enabled: !!ctx.sessions.current(),
+      run: toggle,
+    }));
 
     ctx.add(MenuItem, (): MenuItem => {
       const session = ctx.sessions.current();
@@ -209,8 +213,8 @@ export default Plugin.define({
 
     return () => {
       running.abort();
-      subscription?.dispose();
-      subscription = undefined;
+      subscription()?.dispose();
+      setSubscription(undefined);
     };
   },
 });
