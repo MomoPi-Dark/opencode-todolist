@@ -14,59 +14,59 @@
  * apart again.
  */
 export type BusyEvent =
-    | { type: "session.execution.started" }
-    | { type: "session.execution.succeeded" }
-    | { type: "session.execution.failed" }
-    | { type: "session.execution.interrupted" }
-    | { type: "session.idle" }
-    | { type: "session.status"; data: { status: { type: string } } };
+  | { type: "session.execution.started" }
+  | { type: "session.execution.succeeded" }
+  | { type: "session.execution.failed" }
+  | { type: "session.execution.interrupted" }
+  | { type: "session.idle" }
+  | { type: "session.status"; data: { status: { type: string } } };
 
 /** A client event reduced to the fields this module reads. */
 export interface BusyEventSource {
-    type: string;
-    data: object;
+  type: string;
+  data: object;
 }
 
 /** The narrowed event, or `undefined` when it does not concern `busy`. */
 export function asBusyEvent(
-    event: BusyEventSource,
+  event: BusyEventSource,
 ): (BusyEvent & { sessionID: string }) | undefined {
-    const data = event.data as {
-        sessionID?: string;
-        status?: { type: string };
-    };
-    const sessionID = data.sessionID;
-    if (!sessionID) return undefined;
+  const data = event.data as {
+    sessionID?: string;
+    status?: { type: string };
+  };
+  const sessionID = data.sessionID;
+  if (!sessionID) return undefined;
 
-    switch (event.type) {
-        case "session.execution.started":
-        case "session.execution.succeeded":
-        case "session.execution.failed":
-        case "session.execution.interrupted":
-        case "session.idle":
-            return { type: event.type, sessionID };
-        case "session.status": {
-            const status = data.status;
-            return status
-                ? { type: "session.status", data: { status }, sessionID }
-                : undefined;
-        }
-        default:
-            return undefined;
+  switch (event.type) {
+    case "session.execution.started":
+    case "session.execution.succeeded":
+    case "session.execution.failed":
+    case "session.execution.interrupted":
+    case "session.idle":
+      return { type: event.type, sessionID };
+    case "session.status": {
+      const status = data.status;
+      return status
+        ? { type: "session.status", data: { status }, sessionID }
+        : undefined;
     }
+    default:
+      return undefined;
+  }
 }
 
 /** The next `busy` value, or `undefined` for an event that does not affect it. */
 export function nextBusy(event: BusyEvent): boolean | undefined {
-    switch (event.type) {
-        case "session.execution.started":
-            return true;
-        case "session.execution.succeeded":
-        case "session.execution.failed":
-        case "session.execution.interrupted":
-        case "session.idle":
-            return false;
-        case "session.status":
-            return event.data.status.type !== "idle";
-    }
+  switch (event.type) {
+    case "session.execution.started":
+      return true;
+    case "session.execution.succeeded":
+    case "session.execution.failed":
+    case "session.execution.interrupted":
+    case "session.idle":
+      return false;
+    case "session.status":
+      return event.data.status.type !== "idle";
+  }
 }

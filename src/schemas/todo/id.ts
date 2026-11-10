@@ -17,17 +17,17 @@ const ROOT_ID_RE = /^\d+$/;
 const NUMERIC_ID_RE = /^\d+(\.\d+)?$/;
 
 const numericId = (value: unknown): unknown => {
-    if (typeof value !== "string") return value;
-    const v = value.trim();
-    return NUMERIC_ID_RE.test(v) ? Number(v) : value;
+  if (typeof value !== "string") return value;
+  const v = value.trim();
+  return NUMERIC_ID_RE.test(v) ? Number(v) : value;
 };
 
 // Root ids coerce only from digit-only strings: "1" -> 1.
 // "1.0", "1.1", "1e0" and "0x1" stay strings and fail z.number().
 const rootNumericId = (value: unknown): unknown => {
-    if (typeof value !== "string") return value;
-    const v = value.trim();
-    return ROOT_ID_RE.test(v) ? Number(v) : value;
+  if (typeof value !== "string") return value;
+  const v = value.trim();
+  return ROOT_ID_RE.test(v) ? Number(v) : value;
 };
 
 /**
@@ -35,14 +35,14 @@ const rootNumericId = (value: unknown): unknown => {
  * A top-level id only: `1`, `2`, ... — never a dotted subtask id.
  */
 export const RootIdSchema = z.preprocess(
-    rootNumericId,
-    z
-        .number({ error: "Root id must be a whole number like 1 (no dots)" })
-        .int({
-            error: "Root id must be a whole number like 1; use 1.1 only for subtasks",
-        })
-        .positive()
-        .describe("Unique task identifier (e.g. 1)"),
+  rootNumericId,
+  z
+    .number({ error: "Root id must be a whole number like 1 (no dots)" })
+    .int({
+      error: "Root id must be a whole number like 1; use 1.1 only for subtasks",
+    })
+    .positive()
+    .describe("Unique task identifier (e.g. 1)"),
 );
 
 /**
@@ -50,14 +50,14 @@ export const RootIdSchema = z.preprocess(
  * Only a single decimal digit (1-9) is allowed, see the note below.
  */
 export const ChildIdSchema = z.preprocess(
-    numericId,
-    z
-        .number()
-        .refine((n) => /^[1-9]\d*\.[1-9]$/.test(String(n)), {
-            message:
-                "Child id must follow the format <root_id>.<n> with n from 1 to 9, e.g. 1.1",
-        })
-        .describe("Unique subtask identifier, format <root_id>.<n> (e.g. 1.1)"),
+  numericId,
+  z
+    .number()
+    .refine((n) => /^[1-9]\d*\.[1-9]$/.test(String(n)), {
+      message:
+        "Child id must follow the format <root_id>.<n> with n from 1 to 9, e.g. 1.1",
+    })
+    .describe("Unique subtask identifier, format <root_id>.<n> (e.g. 1.1)"),
 );
 
 /**
@@ -66,8 +66,8 @@ export const ChildIdSchema = z.preprocess(
  * reports the expected shape instead of zod's generic "Invalid input".
  */
 export const TodoTargetIdSchema = z
-    .union([RootIdSchema, ChildIdSchema], {
-        error:
-            "id must be a number like 1 (root) or 1.1 (subtask); remove the quotes",
-    })
-    .describe("Root or child todo id, e.g. 1 or 1.1");
+  .union([RootIdSchema, ChildIdSchema], {
+    error:
+      "id must be a number like 1 (root) or 1.1 (subtask); remove the quotes",
+  })
+  .describe("Root or child todo id, e.g. 1 or 1.1");

@@ -10,24 +10,24 @@ export const ERROR_PREFIX = "↳ error: ";
  * wider than the viewport and horizontal scrolling has nothing to move.
  */
 export function RowWidth(row: {
-    id?: number;
-    content: string;
-    depth: number;
-    elapsed?: string;
-    chevron?: boolean;
+  id?: number;
+  content: string;
+  depth: number;
+  elapsed?: string;
+  chevron?: boolean;
 }): number {
-    const indent = row.depth > 0 ? 2 : 0;
-    const chevron = row.chevron ? 2 : 0;
-    const label =
-        row.id !== undefined
-            ? `${TodoTree.formatIdPrefix(row.id, row.depth)}${row.content}`
-            : row.content;
-    const extra = row.elapsed ? 3 + [...row.elapsed].length : 0;
-    return indent + chevron + 1 + 1 + [...label].length + extra;
+  const indent = row.depth > 0 ? 2 : 0;
+  const chevron = row.chevron ? 2 : 0;
+  const label =
+    row.id !== undefined
+      ? `${TodoTree.formatIdPrefix(row.id, row.depth)}${row.content}`
+      : row.content;
+  const extra = row.elapsed ? 3 + [...row.elapsed].length : 0;
+  return indent + chevron + 1 + 1 + [...label].length + extra;
 }
 
 /** Rendered width of an expanded error line under its row. */
 export function ErrorRowWidth(row: { error: string; depth: number }): number {
-    const indent = row.depth > 0 ? 4 : 2;
-    return indent + [...(ERROR_PREFIX + row.error)].length;
+  const indent = row.depth > 0 ? 4 : 2;
+  return indent + [...(ERROR_PREFIX + row.error)].length;
 }

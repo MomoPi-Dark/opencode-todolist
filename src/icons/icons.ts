@@ -18,23 +18,19 @@
  * (block art) or rendered as an image on terminals that support it.
  */
 
-/** Collapsed indicator. */
 export const ARROW_RIGHT = "▶";
 
-/** Expanded indicator. */
 export const ARROW_DOWN = "▼";
 
-/** Continue action. */
 export const CONTINUE = "↻";
 
-/** Clear action. */
 export const CLEAR = "⨯";
 
 export const ALL_GLYPHS = {
-    ARROW_RIGHT,
-    ARROW_DOWN,
-    CONTINUE,
-    CLEAR,
+  ARROW_RIGHT,
+  ARROW_DOWN,
+  CONTINUE,
+  CLEAR,
 } as const;
 
 /**
@@ -44,10 +40,10 @@ export const ALL_GLYPHS = {
  * Update these whenever a glyph above changes; the test compares the two.
  */
 export const GLYPH_CODEPOINTS = {
-    ARROW_RIGHT: 0x25b6, // ▶
-    ARROW_DOWN: 0x25bc, // ▼
-    CONTINUE: 0x21bb, // ↻
-    CLEAR: 0x2a2f, // ⨯
+  ARROW_RIGHT: 0x25b6, // ▶
+  ARROW_DOWN: 0x25bc, // ▼
+  CONTINUE: 0x21bb, // ↻
+  CLEAR: 0x2a2f, // ⨯
 } as const;
 
 /**
@@ -56,8 +52,8 @@ export const GLYPH_CODEPOINTS = {
  * quietly reintroduce a shrunk indicator.
  */
 export const REJECTED_GLYPHS = [
-    "▸", // U+25B8 small triangle, too small at this size
-    "▾", // U+25BE small triangle, too small at this size
-    "▷", // U+25B7 outline triangle, too small
-    "◁", // U+25C1 outline triangle, too small
+  "▸", // U+25B8 small triangle, too small at this size
+  "▾", // U+25BE small triangle, too small at this size
+  "▷", // U+25B7 outline triangle, too small
+  "◁", // U+25C1 outline triangle, too small
 ] as const;

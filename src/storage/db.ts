@@ -16,8 +16,6 @@ import { dirname, join } from "node:path";
  * They share no memory, so the PRAGMAs below are not decoration.
  */
 
-// Types
-
 /**
  * No relations generic: this schema is queried with the core builder
  * (`select`/`insert`/`update`/`delete`), never with relational `db.query`.
@@ -30,8 +28,6 @@ export interface TodoDatabaseHandle {
   readonly db: TodoDatabase;
   readonly path: string;
 }
-
-// Configuration
 
 /**
  * Applied on every open, before `migrate()`, so the migration itself runs
@@ -64,8 +60,6 @@ export function resolveMigrationsFolder(): string {
   return join(import.meta.dirname, "..", "..", "drizzle");
 }
 
-// Opening
-
 /**
  * Copies a database opened by an older build into the current location.
  *
@@ -76,10 +70,7 @@ export function resolveMigrationsFolder(): string {
  *
  * Returns true when a copy was made.
  */
-export function copyLegacyDatabase(
-  legacyPath: string,
-  path: string,
-): boolean {
+export function copyLegacyDatabase(legacyPath: string, path: string): boolean {
   if (!existsSync(legacyPath) || existsSync(path)) return false;
 
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });

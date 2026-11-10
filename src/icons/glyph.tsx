@@ -4,25 +4,25 @@ import { type ColorInput } from "@opentui/core";
 export type GlyphSize = number | "auto" | `${number}%`;
 
 export type GlyphProps = {
-    /**
-     * The glyph to draw. Pass a function to keep it reactive (the arrow depends
-     * on `isCollapsed()`), or a plain string for a fixed symbol.
-     */
-    glyph: (() => string) | string;
-    color?: ColorInput;
-    /** Shortcut: stretch to `100%` on both axes (fill the parent). */
-    fill?: boolean;
-    /** Shorthand that sets both `width` and `height`. */
-    size?: GlyphSize;
-    /** Horizontal cells; overrides `fill` and `size`. Defaults to `"auto"`. */
-    width?: GlyphSize;
-    /** Vertical cells; overrides `fill` and `size`. Defaults to `"auto"`. */
-    height?: GlyphSize;
+  /**
+   * The glyph to draw. Pass a function to keep it reactive (the arrow depends
+   * on `isCollapsed()`), or a plain string for a fixed symbol.
+   */
+  glyph: (() => string) | string;
+  color?: ColorInput;
+  /** Shortcut: stretch to `100%` on both axes (fill the parent). */
+  fill?: boolean;
+  /** Shorthand that sets both `width` and `height`. */
+  size?: GlyphSize;
+  /** Horizontal cells; overrides `fill` and `size`. Defaults to `"auto"`. */
+  width?: GlyphSize;
+  /** Vertical cells; overrides `fill` and `size`. Defaults to `"auto"`. */
+  height?: GlyphSize;
 };
 
 export type GlyphBox = {
-    readonly width: GlyphSize;
-    readonly height: GlyphSize;
+  readonly width: GlyphSize;
+  readonly height: GlyphSize;
 };
 
 /**
@@ -37,17 +37,24 @@ export type GlyphBox = {
  * Kept pure so the rules are testable without a live renderer.
  */
 export function ResolveGlyphBox(props: {
-    fill?: boolean;
-    size?: GlyphSize;
-    width?: GlyphSize;
-    height?: GlyphSize;
+  fill?: boolean;
+  size?: GlyphSize;
+  width?: GlyphSize;
+  height?: GlyphSize;
 }): GlyphBox {
-    const fillSize: GlyphSize = "100%";
-    return {
-        width: props.width ?? (props.fill ? fillSize : undefined) ?? props.size ?? "auto",
-        height:
-            props.height ?? (props.fill ? fillSize : undefined) ?? props.size ?? "auto",
-    };
+  const fillSize: GlyphSize = "100%";
+  return {
+    width:
+      props.width ??
+      (props.fill ? fillSize : undefined) ??
+      props.size ??
+      "auto",
+    height:
+      props.height ??
+      (props.fill ? fillSize : undefined) ??
+      props.size ??
+      "auto",
+  };
 }
 
 /**
@@ -71,21 +78,20 @@ export function ResolveGlyphBox(props: {
  * the terminal supports images).
  */
 export function Glyph(props: GlyphProps) {
-    const text = () => {
-        const glyph = props.glyph;
-        return typeof glyph === "function" ? glyph() : glyph;
-    };
-    const box = () => ResolveGlyphBox(props);
+  const text = () => {
+    const glyph = props.glyph;
+    return typeof glyph === "function" ? glyph() : glyph;
+  };
+  const box = () => ResolveGlyphBox(props);
 
-    return (
-        <text
-            wrapMode="none"
-            fg={props.color}
-            width={box().width}
-            height={box().height}
-        >
-            {text()}
-        </text>
-    );
+  return (
+    <text
+      wrapMode="none"
+      fg={props.color}
+      width={box().width}
+      height={box().height}
+    >
+      {text()}
+    </text>
+  );
 }
-

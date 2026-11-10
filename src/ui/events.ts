@@ -6,10 +6,10 @@
  * `asBusyEvent`; adding one there still means adding it here.
  */
 export const BUSY_EVENT_TYPES = [
-    "session.execution.started",
-    "session.execution.succeeded",
-    "session.execution.failed",
-    "session.execution.interrupted",
-    "session.idle",
-    "session.status",
+  "session.execution.started",
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.idle",
+  "session.status",
 ] as const;

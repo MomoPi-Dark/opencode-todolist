@@ -213,11 +213,7 @@ export function createTodoStore(ctx: PlatformContext = {}) {
   }
 
   function getWarning(): string | undefined {
-    return formatMigrationWarning(
-      getReport(),
-      resolveLegacyDir(),
-      getDbPath(),
-    );
+    return formatMigrationWarning(getReport(), resolveLegacyDir(), getDbPath());
   }
 
   /**

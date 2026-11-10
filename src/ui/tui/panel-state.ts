@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin/tui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { TodoRootItem } from "../../schemas/todo/item";
 import { createTodoSubscription, type TodoSubscription } from "../../rpc";
+import type { TodoRootItem } from "../../schemas/todo/item";
 import { formatElapsed } from "../../todos/utils/continue-prompt";
 import {
   getTodoDisplaySummary,
@@ -31,13 +31,11 @@ export interface PanelState {
   readonly manualRootToggles: () => readonly number[];
   readonly setExpandedIds: (
     next:
-      | readonly number[]
-      | ((current: readonly number[]) => readonly number[]),
+      readonly number[] | ((current: readonly number[]) => readonly number[]),
   ) => void;
   readonly setManualRootToggles: (
     next:
-      | readonly number[]
-      | ((current: readonly number[]) => readonly number[]),
+      readonly number[] | ((current: readonly number[]) => readonly number[]),
   ) => void;
   /** Rows with collapse applied; the caller attaches elapsed time. */
   readonly rows: () => readonly TodoRow[];

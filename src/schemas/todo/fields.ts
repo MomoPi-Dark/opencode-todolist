@@ -7,6 +7,6 @@ export const MAX_CHILDREN = 9;
 
 export const contentField = z.string().trim().min(1).max(MAX_CONTENT);
 export const noteField = z
-    .string()
-    .max(MAX_NOTE)
-    .describe("Optional free-form note for this todo.");
+  .string()
+  .max(MAX_NOTE)
+  .describe("Optional free-form note for this todo.");

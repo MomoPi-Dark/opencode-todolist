@@ -7,15 +7,15 @@ import { TodoOperationErrorSchema } from "./error";
  * they belong in the result contract, not only in the renderer's options.
  */
 export const VisibleIdsSchema = z
-    .array(z.number().int())
-    .readonly()
-    .describe(
-        "Ids the read is scoped to, newest first; omitted means every row.",
-    );
+  .array(z.number().int())
+  .readonly()
+  .describe(
+    "Ids the read is scoped to, newest first; omitted means every row.",
+  );
 
 const readFields = {
-    todos: TodoListSchema,
-    visibleIds: VisibleIdsSchema.optional(),
+  todos: TodoListSchema,
+  visibleIds: VisibleIdsSchema.optional(),
 };
 
 /**
@@ -24,19 +24,19 @@ const readFields = {
  * keeping one copy is what makes the schema the single source of truth.
  */
 export const TodoReadSuccessSchema = z.object({
-    ok: z.literal(true),
-    ...readFields,
-    content: z.string(),
+  ok: z.literal(true),
+  ...readFields,
+  content: z.string(),
 });
 
 export const TodoReadErrorSchema = z.object({
-    ok: z.literal(false),
-    ...readFields,
-    error: TodoOperationErrorSchema,
+  ok: z.literal(false),
+  ...readFields,
+  error: TodoOperationErrorSchema,
 });
 
 export const TodoReadResultSchema = z.discriminatedUnion("ok", [
-    TodoReadSuccessSchema,
-    TodoReadErrorSchema,
+  TodoReadSuccessSchema,
+  TodoReadErrorSchema,
 ]);
 export type TodoReadResult = z.infer<typeof TodoReadResultSchema>;

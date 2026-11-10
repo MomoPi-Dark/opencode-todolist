@@ -2,55 +2,55 @@ import z from "zod";
 import { ChildIdSchema, RootIdSchema, TodoTargetIdSchema } from "./id";
 
 const readOperation = z
-    .literal("read")
-    .describe("'read' to inspect current todos.");
+  .literal("read")
+  .describe("'read' to inspect current todos.");
 
 const formatOption = z
-    .enum(["tree", "summary"])
-    .default("tree")
-    .describe(
-        "Output format: 'tree' for standard tree view, 'summary' for compact completed summary.",
-    );
+  .enum(["tree", "summary"])
+  .default("tree")
+  .describe(
+    "Output format: 'tree' for standard tree view, 'summary' for compact completed summary.",
+  );
 
 export const TodoReadAllSchema = z
-    .object({
-        operation: readOperation,
-        format: formatOption,
-        scope: z
-            .literal("all")
-            .default("all")
-            .describe("Default. Return the whole list."),
-    })
-    .strict();
+  .object({
+    operation: readOperation,
+    format: formatOption,
+    scope: z
+      .literal("all")
+      .default("all")
+      .describe("Default. Return the whole list."),
+  })
+  .strict();
 
 export const TodoReadItemSchema = z
-    .object({
-        operation: readOperation,
-        format: formatOption,
-        scope: z.literal("item").describe("Return only the targeted item."),
-        target: TodoTargetIdSchema,
-    })
-    .strict();
+  .object({
+    operation: readOperation,
+    format: formatOption,
+    scope: z.literal("item").describe("Return only the targeted item."),
+    target: TodoTargetIdSchema,
+  })
+  .strict();
 
 export const TodoReadChildrenSchema = z
-    .object({
-        operation: readOperation,
-        format: formatOption,
-        scope: z.literal("children"),
-        target: ChildIdSchema,
-    })
-    .strict();
+  .object({
+    operation: readOperation,
+    format: formatOption,
+    scope: z.literal("children"),
+    target: ChildIdSchema,
+  })
+  .strict();
 
 export const TodoReadRootSchema = z
-    .object({
-        operation: readOperation,
-        format: formatOption,
-        scope: z
-            .literal("root")
-            .describe("Return exactly one root together with all of its subtasks."),
-        target: RootIdSchema.describe("Root todo id, e.g. 1."),
-    })
-    .strict();
+  .object({
+    operation: readOperation,
+    format: formatOption,
+    scope: z
+      .literal("root")
+      .describe("Return exactly one root together with all of its subtasks."),
+    target: RootIdSchema.describe("Root todo id, e.g. 1."),
+  })
+  .strict();
 
 // `read` is a discriminated union on `scope`, so an impossible combination
 // cannot be written at all: `target` exists only alongside `scope: "item"`
@@ -64,9 +64,14 @@ export const TodoReadRootSchema = z
 // a plain union when no discriminator matches; `TodoReadAllSchema` then accepts
 // the input and fills in `scope: "all"`.
 export const TodoReadOperationSchema = z.discriminatedUnion(
-    "scope",
-    [TodoReadAllSchema, TodoReadItemSchema, TodoReadRootSchema, TodoReadChildrenSchema],
-    { unionFallback: true },
+  "scope",
+  [
+    TodoReadAllSchema,
+    TodoReadItemSchema,
+    TodoReadRootSchema,
+    TodoReadChildrenSchema,
+  ],
+  { unionFallback: true },
 );
 
 export type TodoReadAllInput = z.infer<typeof TodoReadAllSchema>;
@@ -76,5 +81,4 @@ export type TodoReadChildrenInput = z.infer<typeof TodoReadChildrenSchema>;
 export type TodoReadInput = z.infer<typeof TodoReadOperationSchema>;
 export type TodoReadScope = TodoReadInput["scope"];
 
-// Pre-parse shape, for callers that build tool input (clients, tests).
 export type TodoReadInputRaw = z.input<typeof TodoReadOperationSchema>;

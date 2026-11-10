@@ -3,72 +3,72 @@ import { Todos } from "./rpc";
 import { TodoInputToolSchema, TodoOutputToolSchema } from "./schemas/todo";
 import { registerTodoSkills } from "./skills/loader";
 import {
-    clearSessionTodos,
-    createSessionTodos,
-    readSessionTodos,
-    runOperation,
-    updateSessionTodos,
+  clearSessionTodos,
+  createSessionTodos,
+  readSessionTodos,
+  runOperation,
+  updateSessionTodos,
 } from "./todos/handlers";
 import type { TodoSessionRpc } from "./todos/handlers/session-rpc";
 import { registerTodoPromptHook } from "./todos/utils/hint";
 
 async function registerTodoRpc(ctx: Plugin.Context) {
-    const holder: { rpc?: TodoSessionRpc } = {};
+  const holder: { rpc?: TodoSessionRpc } = {};
 
-    const registration = await ctx.rpc.register(Todos, {
-        read: (input) => readSessionTodos(input.sessionID, input),
-        create: (input) => {
-            if (!holder.rpc) throw new Error("todo rpc not ready");
-            return createSessionTodos(input.sessionID, input, holder.rpc);
-        },
-        update: (input) => {
-            if (!holder.rpc) throw new Error("todo rpc not ready");
-            return updateSessionTodos(input.sessionID, input, holder.rpc);
-        },
-        clear: (input) => {
-            if (!holder.rpc) throw new Error("todo rpc not ready");
-            return clearSessionTodos(input.sessionID, {
-                guard: input.guard,
-                rpc: holder.rpc,
-                ui: input.ui,
-            });
-        },
-    });
+  const registration = await ctx.rpc.register(Todos, {
+    read: (input) => readSessionTodos(input.sessionID, input),
+    create: (input) => {
+      if (!holder.rpc) throw new Error("todo rpc not ready");
+      return createSessionTodos(input.sessionID, input, holder.rpc);
+    },
+    update: (input) => {
+      if (!holder.rpc) throw new Error("todo rpc not ready");
+      return updateSessionTodos(input.sessionID, input, holder.rpc);
+    },
+    clear: (input) => {
+      if (!holder.rpc) throw new Error("todo rpc not ready");
+      return clearSessionTodos(input.sessionID, {
+        guard: input.guard,
+        rpc: holder.rpc,
+        ui: input.ui,
+      });
+    },
+  });
 
-    holder.rpc = registration;
-    return registration;
+  holder.rpc = registration;
+  return registration;
 }
 
 export default Plugin.define({
-    id: "todolist.tool",
-    async setup(ctx) {
-        const rpc = ctx.rpc(Todos);
+  id: "todolist.tool",
+  async setup(ctx) {
+    const rpc = ctx.rpc(Todos);
 
-        await registerTodoRpc(ctx);
-        await registerTodoSkills(ctx);
-        await registerTodoPromptHook(ctx);
+    await registerTodoRpc(ctx);
+    await registerTodoSkills(ctx);
+    await registerTodoPromptHook(ctx);
 
-        await ctx.tool.transform((tools) => {
-            tools.add({
-                name: "manage_todo_list",
-                description:
-                    "Track multi-step work (3+ steps) in a hierarchical todo list. Operations: read, create, update, clear. Supports status, priority, notes, and subtasks; read first when unsure of the current state. Batch every change into ONE update call (up to 10 updates): finishing the current item and starting the next belong in the same call.",
-                input: TodoInputToolSchema,
-                output: TodoOutputToolSchema,
-                options: { codemode: false },
-                execute: async (input, toolContext) => {
-                    const parsed = TodoInputToolSchema.safeParse(input);
-                    if (!parsed.success) {
-                        throw new Error(
-                            `Invalid manage_todo_list input: ${parsed.error.issues
-                                .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
-                                .join(", ")}`,
-                        );
-                    }
-                    const { sessionID } = toolContext;
-                    return runOperation(rpc, parsed.data, sessionID);
-                },
-            });
-        });
-    },
+    await ctx.tool.transform((tools) => {
+      tools.add({
+        name: "manage_todo_list",
+        description:
+          "Track multi-step work (3+ steps) in a hierarchical todo list. Operations: read, create, update, clear. Supports status, priority, notes, and subtasks; read first when unsure of the current state. Batch every change into ONE update call (up to 10 updates): finishing the current item and starting the next belong in the same call.",
+        input: TodoInputToolSchema,
+        output: TodoOutputToolSchema,
+        options: { codemode: false },
+        execute: async (input, toolContext) => {
+          const parsed = TodoInputToolSchema.safeParse(input);
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid manage_todo_list input: ${parsed.error.issues
+                .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+                .join(", ")}`,
+            );
+          }
+          const { sessionID } = toolContext;
+          return runOperation(rpc, parsed.data, sessionID);
+        },
+      });
+    });
+  },
 });

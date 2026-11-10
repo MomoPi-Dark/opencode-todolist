@@ -1,8 +1,8 @@
 import type { TodoRuleCode } from "../../schemas/rpc/error";
 import type {
-    TodoChildren,
-    TodoList,
-    TodoRootItem,
+  TodoChildren,
+  TodoList,
+  TodoRootItem,
 } from "../../schemas/todo/item";
 import type { Priority, TodoStatus } from "../../schemas/todo/status";
 import type { TodoUpdateItem } from "../../schemas/todo/update";
@@ -16,59 +16,58 @@ import { TodoTree, type TodoLocation } from "../todotree";
 export type { TodoRuleCode };
 
 export interface TodoRuleError {
-    code: TodoRuleCode;
-    /** Ready to hand back to the model: says what is wrong and what to do. */
-    message: string;
-    /** The row the error is about, when it is about one row. */
-    id?: number;
+  code: TodoRuleCode;
+  /** Ready to hand back to the model: says what is wrong and what to do. */
+  message: string;
+  /** The row the error is about, when it is about one row. */
+  id?: number;
 }
 
 /** One row as it stands after the update; what the tool reports back. */
 export interface TodoUpdatedRow {
-    id: number;
-    scope: "root" | "child";
-    content: string;
-    status: TodoStatus;
+  id: number;
+  scope: "root" | "child";
+  content: string;
+  status: TodoStatus;
 }
 
 export type TodoApplyResult =
-    | { ok: true; todos: TodoRootItem[]; updated: TodoUpdatedRow[] }
-    | {
-        ok: false;
-        error: TodoRuleError;
-        /**
-         * Index in the batch that failed. The batch is atomic, so nothing was
-         * applied: the caller starts again from its own copy.
-         */
-        index: number;
+  | { ok: true; todos: TodoRootItem[]; updated: TodoUpdatedRow[] }
+  | {
+      ok: false;
+      error: TodoRuleError;
+      /**
+       * Index in the batch that failed. The batch is atomic, so nothing was
+       * applied: the caller starts again from its own copy.
+       */
+      index: number;
     };
 
 /** Result of a single step: the batch `index` only exists at batch level. */
 type TodoStepResult =
-    | Extract<TodoApplyResult, { ok: true }>
-    | { ok: false; error: TodoRuleError };
+  Extract<TodoApplyResult, { ok: true }> | { ok: false; error: TodoRuleError };
 
 const fail = (
-    code: TodoRuleCode,
-    message: string,
-    id?: number,
+  code: TodoRuleCode,
+  message: string,
+  id?: number,
 ): TodoRuleError => ({ code, message, ...(id === undefined ? {} : { id }) });
 
 const isFinal = (status: TodoStatus): boolean =>
-    status === "completed" || status === "cancelled";
+  status === "completed" || status === "cancelled";
 
 /** A cancelled row may be brought back by moving it to `in_progress`. */
 const isReopen = (from: TodoStatus, to: TodoStatus | undefined): boolean =>
-    from === "cancelled" && to === "in_progress";
+  from === "cancelled" && to === "in_progress";
 
 const toRow = (
-    item: { id: number; content: string; status: TodoStatus },
-    scope: TodoUpdatedRow["scope"],
+  item: { id: number; content: string; status: TodoStatus },
+  scope: TodoUpdatedRow["scope"],
 ): TodoUpdatedRow => ({
-    id: item.id,
-    scope,
-    content: item.content,
-    status: item.status,
+  id: item.id,
+  scope,
+  content: item.content,
+  status: item.status,
 });
 
 /**
@@ -90,385 +89,386 @@ const toRow = (
  * (order between roots, auto-completion, parent/child consistency).
  */
 export class TodoRules {
-    private constructor() { }
+  private constructor() {}
 
-    // Status transitions
+  /**
+   * Forward-only: a status may advance or stay put, never move back.
+   *
+   * `completed` and `cancelled` are final and locked. `error` may be repaired
+   * to `in_progress`, `completed` or `cancelled`, but not rewound to
+   * `pending` — the work was started, so it cannot pretend it never was.
+   */
+  private static readonly TRANSITIONS: Record<
+    TodoStatus,
+    readonly TodoStatus[]
+  > = {
+    pending: ["in_progress", "completed", "cancelled", "error"],
+    in_progress: ["completed", "cancelled", "error"],
+    error: ["in_progress", "completed", "cancelled"],
+    completed: [],
+    cancelled: ["in_progress"],
+  };
 
-    /**
-     * Forward-only: a status may advance or stay put, never move back.
-     *
-     * `completed` and `cancelled` are final and locked. `error` may be repaired
-     * to `in_progress`, `completed` or `cancelled`, but not rewound to
-     * `pending` — the work was started, so it cannot pretend it never was.
-     */
-    private static readonly TRANSITIONS: Record<
-        TodoStatus,
-        readonly TodoStatus[]
-    > = {
-            pending: ["in_progress", "completed", "cancelled", "error"],
-            in_progress: ["completed", "cancelled", "error"],
-            error: ["in_progress", "completed", "cancelled"],
-            completed: [],
-            cancelled: ["in_progress"],
-        };
+  static isFinal(status: TodoStatus): boolean {
+    return isFinal(status);
+  }
 
-    static isFinal(status: TodoStatus): boolean {
-        return isFinal(status);
+  /** True when `to` is reachable from `from`, same status included. */
+  static canTransition(from: TodoStatus, to: TodoStatus): boolean {
+    if (from === to) return true;
+    return (this.TRANSITIONS[from] ?? []).includes(to);
+  }
+
+  static checkTransition(
+    from: TodoStatus,
+    to: TodoStatus,
+    id: number,
+  ): TodoRuleError | null {
+    if (this.canTransition(from, to)) return null;
+
+    if (isFinal(from)) {
+      return fail(
+        "item_final",
+        `${id} is already '${from}' and locked. Only a pending, in-progress or errored todo can change status.`,
+        id,
+      );
     }
 
-    /** True when `to` is reachable from `from`, same status included. */
-    static canTransition(from: TodoStatus, to: TodoStatus): boolean {
-        if (from === to) return true;
-        return (this.TRANSITIONS[from] ?? []).includes(to);
+    return fail(
+      "backward_transition",
+      `${id} cannot go from '${from}' to '${to}'. Progress moves forward only.`,
+      id,
+    );
+  }
+
+  // Scope
+
+  /**
+   * Which row the update is aimed at, or a `not_found` error.
+   *
+   * Exposed so a caller can resolve an id once and reuse the answer instead of
+   * scanning the list twice.
+   */
+  static locate(todos: TodoList, id: number): TodoLocation | TodoRuleError {
+    const found = TodoTree.find(todos, id);
+    return found ?? fail("not_found", `No todo ${id}.`, id);
+  }
+
+  /**
+   * May this row be touched right now?
+   *
+   * Four rules, in the order the model needs to hear them:
+   *
+   * 1. **Locked rows.** A completed or cancelled row cannot be edited — that
+   *    is the most precise reason, so it wins over the order rule.
+   * 2. **Nothing left to do.** Every root is already closed, so the list is
+   *    over even if a closed root still holds an open subtask.
+   * 3. **Order.** Only the first unfinished root, and its own subtasks, may
+   *    change — with one exception: a root holding `error` is fixable early,
+   *    because a broken step must not be blocked by earlier work.
+   * 4. **One active chain.** No second `in_progress` root, and no second
+   *    `in_progress` subtask inside the same root.
+   */
+  static checkScope(
+    todos: TodoList,
+    location: TodoLocation,
+    update: Pick<TodoUpdateItem, "id" | "status" | "cancel_remaining">,
+  ): TodoRuleError | null {
+    const id = update.id;
+    const reopening = isReopen(location.item.status, update.status);
+
+    // `cancelled` is final too, but it may be reopened (see `TRANSITIONS`).
+    if (location.item.status === "completed") {
+      return fail(
+        "item_final",
+        `${id} is 'completed' and locked. Reopen it by creating a new todo instead.`,
+        id,
+      );
     }
 
-    static checkTransition(
-        from: TodoStatus,
-        to: TodoStatus,
-        id: number,
-    ): TodoRuleError | null {
-        if (this.canTransition(from, to)) return null;
+    if (
+      location.depth === 0 &&
+      update.status !== undefined &&
+      (location.root.children ?? []).some((child) => !isFinal(child.status)) &&
+      update.cancel_remaining !== true
+    ) {
+      return fail(
+        "child_open",
+        `Root ${id} has open children. Finish or cancel every child before changing the root status.`,
+        id,
+      );
+    }
 
-        if (isFinal(from)) {
-            return fail(
-                "item_final",
-                `${id} is already '${from}' and locked. Only a pending, in-progress or errored todo can change status.`,
-                id,
-            );
-        }
+    const firstOpenIndex = todos.findIndex((root) =>
+      root.children?.length
+        ? !isFinal(TodoTree.deriveRootStatus(root))
+        : !isFinal(root.status),
+    );
 
+    // Reachable only from a stored list where a closed root still holds an
+    // open subtask: every root is final, so the work belongs to a task that
+    // was already dropped or finished. Editing it would resurrect that root.
+    // `cancel_remaining` is the one deliberate exception: the user is
+    // dropping the whole container, not resurrecting its work.
+    if (
+      firstOpenIndex === -1 &&
+      !reopening &&
+      update.cancel_remaining !== true
+    ) {
+      return fail(
+        "list_final",
+        "Every root is already completed or cancelled, so there is nothing left to update. Create a new todo instead.",
+        id,
+      );
+    }
+
+    const targetRootIndex = todos.indexOf(location.root);
+    if (
+      targetRootIndex !== firstOpenIndex &&
+      !reopening &&
+      !this.holdsError(location.root) &&
+      update.cancel_remaining !== true
+    ) {
+      const blocking = todos[firstOpenIndex];
+      return fail(
+        "root_out_of_order",
+        `Root ${blocking?.id} is still open. Roots run in order: finish or cancel ${blocking?.id} before touching ${id}.`,
+        id,
+      );
+    }
+
+    if (update.status !== undefined) {
+      const transition = this.checkTransition(
+        location.item.status,
+        update.status,
+        id,
+      );
+      if (transition) return transition;
+    }
+
+    if (update.status === "in_progress") {
+      // A container's status follows its children, so "another root is
+      // running" reads the derived value, never the stored one.
+      const statusOf = (root: TodoRootItem) =>
+        (root.children?.length ?? 0) > 0
+          ? TodoTree.deriveRootStatus(root)
+          : root.status;
+
+      const busyRoot = todos.find(
+        (root) =>
+          root.id !== location.root.id && statusOf(root) === "in_progress",
+      );
+      if (busyRoot) {
         return fail(
-            "backward_transition",
-            `${id} cannot go from '${from}' to '${to}'. Progress moves forward only.`,
-            id,
+          "root_busy",
+          `Root ${busyRoot.id} is already in progress. Finish or cancel it before starting ${id}.`,
+          id,
         );
-    }
+      }
 
-    // Scope
-
-    /**
-     * Which row the update is aimed at, or a `not_found` error.
-     *
-     * Exposed so a caller can resolve an id once and reuse the answer instead of
-     * scanning the list twice.
-     */
-    static locate(todos: TodoList, id: number): TodoLocation | TodoRuleError {
-        const found = TodoTree.find(todos, id);
-        return found ?? fail("not_found", `No todo ${id}.`, id);
-    }
-
-    /**
-     * May this row be touched right now?
-     *
-     * Four rules, in the order the model needs to hear them:
-     *
-     * 1. **Locked rows.** A completed or cancelled row cannot be edited — that
-     *    is the most precise reason, so it wins over the order rule.
-     * 2. **Nothing left to do.** Every root is already closed, so the list is
-     *    over even if a closed root still holds an open subtask.
-     * 3. **Order.** Only the first unfinished root, and its own subtasks, may
-     *    change — with one exception: a root holding `error` is fixable early,
-     *    because a broken step must not be blocked by earlier work.
-     * 4. **One active chain.** No second `in_progress` root, and no second
-     *    `in_progress` subtask inside the same root.
-     */
-    static checkScope(
-        todos: TodoList,
-        location: TodoLocation,
-        update: Pick<TodoUpdateItem, "id" | "status" | "cancel_remaining">,
-    ): TodoRuleError | null {
-        const id = update.id;
-        const reopening = isReopen(location.item.status, update.status);
-
-        // `cancelled` is final too, but it may be reopened (see `TRANSITIONS`).
-        if (location.item.status === "completed") {
-            return fail(
-                "item_final",
-                `${id} is 'completed' and locked. Reopen it by creating a new todo instead.`,
-                id,
-            );
-        }
-
-        if (
-            location.depth === 0 &&
-            update.status !== undefined &&
-            (location.root.children ?? []).some((child) => !isFinal(child.status)) &&
-            update.cancel_remaining !== true
-        ) {
-            return fail(
-                "child_open",
-                `Root ${id} has open children. Finish or cancel every child before changing the root status.`,
-                id,
-            );
-        }
-
-        const firstOpenIndex = todos.findIndex((root) =>
-            root.children?.length
-                ? !isFinal(TodoTree.deriveRootStatus(root))
-                : !isFinal(root.status),
+      const busyChild = (location.root.children ?? []).find(
+        (child) =>
+          child.status === "in_progress" && child.id !== location.item.id,
+      );
+      if (busyChild) {
+        return fail(
+          "child_busy",
+          `Subtask ${busyChild.id} is already in progress. Finish or cancel it before starting ${id}.`,
+          id,
         );
-
-        // Reachable only from a stored list where a closed root still holds an
-        // open subtask: every root is final, so the work belongs to a task that
-        // was already dropped or finished. Editing it would resurrect that root.
-        // `cancel_remaining` is the one deliberate exception: the user is
-        // dropping the whole container, not resurrecting its work.
-        if (firstOpenIndex === -1 && !reopening && update.cancel_remaining !== true) {
-            return fail(
-                "list_final",
-                "Every root is already completed or cancelled, so there is nothing left to update. Create a new todo instead.",
-                id,
-            );
-        }
-
-        const targetRootIndex = todos.indexOf(location.root);
-        if (
-            targetRootIndex !== firstOpenIndex &&
-            !reopening &&
-            !this.holdsError(location.root) &&
-            update.cancel_remaining !== true
-        ) {
-            const blocking = todos[firstOpenIndex];
-            return fail(
-                "root_out_of_order",
-                `Root ${blocking?.id} is still open. Roots run in order: finish or cancel ${blocking?.id} before touching ${id}.`,
-                id,
-            );
-        }
-
-        if (update.status !== undefined) {
-            const transition = this.checkTransition(
-                location.item.status,
-                update.status,
-                id,
-            );
-            if (transition) return transition;
-        }
-
-        if (update.status === "in_progress") {
-            // A container's status follows its children, so "another root is
-            // running" reads the derived value, never the stored one.
-            const statusOf = (root: TodoRootItem) =>
-                (root.children?.length ?? 0) > 0
-                    ? TodoTree.deriveRootStatus(root)
-                    : root.status;
-
-            const busyRoot = todos.find(
-                (root) =>
-                    root.id !== location.root.id &&
-                    statusOf(root) === "in_progress",
-            );
-            if (busyRoot) {
-                return fail(
-                    "root_busy",
-                    `Root ${busyRoot.id} is already in progress. Finish or cancel it before starting ${id}.`,
-                    id,
-                );
-            }
-
-            const busyChild = (location.root.children ?? []).find(
-                (child) =>
-                    child.status === "in_progress" && child.id !== location.item.id,
-            );
-            if (busyChild) {
-                return fail(
-                    "child_busy",
-                    `Subtask ${busyChild.id} is already in progress. Finish or cancel it before starting ${id}.`,
-                    id,
-                );
-            }
-        }
-
-        return null;
+      }
     }
 
-    /** A root is fixable early when it, or one of its subtasks, holds `error`. */
-    private static holdsError(root: TodoRootItem): boolean {
-        return (
-            root.status === "error" ||
-            (root.children ?? []).some((child) => child.status === "error")
-        );
+    return null;
+  }
+
+  /** A root is fixable early when it, or one of its subtasks, holds `error`. */
+  private static holdsError(root: TodoRootItem): boolean {
+    return (
+      root.status === "error" ||
+      (root.children ?? []).some((child) => child.status === "error")
+    );
+  }
+
+  // Applying
+
+  /**
+   * Applies a batch of updates in order, atomically.
+   *
+   * Each step is validated against the list the previous step left behind —
+   * not against the original. That is what makes the pair "1.1 completed, then
+   * 1.2 in_progress" legal: 1.2 only stops being blocked by a running sibling
+   * once 1.1 is finished. Validating the whole batch against the original list
+   * would refuse the second step.
+   *
+   * If any step fails, nothing is returned as data: the caller keeps its own
+   * copy and the error points at the offending `index`.
+   */
+  static apply(
+    todos: TodoList,
+    updates: readonly TodoUpdateItem[],
+  ): TodoApplyResult {
+    let state: TodoRootItem[] = [...todos];
+    const updated: TodoUpdatedRow[] = [];
+
+    for (const [index, update] of updates.entries()) {
+      const step = this.applyOne(state, update);
+      if (!step.ok) return { ok: false, error: step.error, index };
+      state = step.todos;
+      updated.push(...step.updated);
     }
 
-    // Applying
+    return { ok: true, todos: state, updated };
+  }
 
-    /**
-     * Applies a batch of updates in order, atomically.
-     *
-     * Each step is validated against the list the previous step left behind —
-     * not against the original. That is what makes the pair "1.1 completed, then
-     * 1.2 in_progress" legal: 1.2 only stops being blocked by a running sibling
-     * once 1.1 is finished. Validating the whole batch against the original list
-     * would refuse the second step.
-     *
-     * If any step fails, nothing is returned as data: the caller keeps its own
-     * copy and the error points at the offending `index`.
-     */
-    static apply(
-        todos: TodoList,
-        updates: readonly TodoUpdateItem[],
-    ): TodoApplyResult {
-        let state: TodoRootItem[] = [...todos];
-        const updated: TodoUpdatedRow[] = [];
+  /** Applies one update against the list as it stands right now. */
+  static applyOne(todos: TodoList, update: TodoUpdateItem): TodoStepResult {
+    const found = this.locate(todos, update.id);
+    if ("code" in found) return { ok: false, error: found };
 
-        for (const [index, update] of updates.entries()) {
-            const step = this.applyOne(state, update);
-            if (!step.ok) return { ok: false, error: step.error, index };
-            state = step.todos;
-            updated.push(...step.updated);
-        }
+    const scopeError = this.checkScope(todos, found, update);
+    if (scopeError) return { ok: false, error: scopeError };
 
-        return { ok: true, todos: state, updated };
+    const cancelRemaining = update.cancel_remaining === true;
+    if (
+      cancelRemaining &&
+      update.status !== "error" &&
+      update.status !== "cancelled"
+    ) {
+      return {
+        ok: false,
+        error: fail(
+          "cancel_remaining_status",
+          `cancel_remaining needs status 'error' or 'cancelled', not '${update.status ?? "unchanged"}'.`,
+          update.id,
+        ),
+      };
     }
 
-    /** Applies one update against the list as it stands right now. */
-    static applyOne(todos: TodoList, update: TodoUpdateItem): TodoStepResult {
-        const found = this.locate(todos, update.id);
-        if ("code" in found) return { ok: false, error: found };
+    const report: TodoUpdatedRow[] = [];
 
-        const scopeError = this.checkScope(todos, found, update);
-        if (scopeError) return { ok: false, error: scopeError };
+    const next = todos.map((root) => {
+      if (root.id !== found.root.id) return root;
 
-        const cancelRemaining = update.cancel_remaining === true;
-        if (
-            cancelRemaining &&
-            update.status !== "error" &&
-            update.status !== "cancelled"
-        ) {
-            return {
-                ok: false,
-                error: fail(
-                    "cancel_remaining_status",
-                    `cancel_remaining needs status 'error' or 'cancelled', not '${update.status ?? "unchanged"}'.`,
-                    update.id,
-                ),
-            };
-        }
+      return found.depth === 0
+        ? this.patchRoot(root, update, cancelRemaining, report)
+        : this.patchChild(root, update, cancelRemaining, report);
+    });
 
-        const report: TodoUpdatedRow[] = [];
-
-        const next = todos.map((root) => {
-            if (root.id !== found.root.id) return root;
-
-            return found.depth === 0
-                ? this.patchRoot(root, update, cancelRemaining, report)
-                : this.patchChild(root, update, cancelRemaining, report);
-        });
-
-        // Second net: the whole-list invariants — order between roots, parent and
-        // child consistency, auto-completion — live in `TodoTree`, so the result
-        // is checked by the same implementation everything else uses.
-        const check = TodoTree.validateAndNormalize(next);
-        if (!check.valid) {
-            return {
-                ok: false,
-                error: fail("list_invalid", check.error, update.id),
-            };
-        }
-
-        return { ok: true, todos: check.data, updated: report };
+    // Second net: the whole-list invariants — order between roots, parent and
+    // child consistency, auto-completion — live in `TodoTree`, so the result
+    // is checked by the same implementation everything else uses.
+    const check = TodoTree.validateAndNormalize(next);
+    if (!check.valid) {
+      return {
+        ok: false,
+        error: fail("list_invalid", check.error, update.id),
+      };
     }
 
-    private static patchRoot(
-        root: TodoRootItem,
-        update: TodoUpdateItem,
-        cancelRemaining: boolean,
-        report: TodoUpdatedRow[],
-    ): TodoRootItem {
-        const patched = this.patch(root, update);
-        report.push(toRow(patched, "root"));
+    return { ok: true, todos: check.data, updated: report };
+  }
 
-        const cancelChildren =
-            cancelRemaining ||
-            patched.status === "error" ||
-            patched.status === "cancelled";
-        if (!cancelChildren || !patched.children) return patched;
+  private static patchRoot(
+    root: TodoRootItem,
+    update: TodoUpdateItem,
+    cancelRemaining: boolean,
+    report: TodoUpdatedRow[],
+  ): TodoRootItem {
+    const patched = this.patch(root, update);
+    report.push(toRow(patched, "root"));
 
-        const children = patched.children.map((child) =>
-            child.status === "pending" || child.status === "in_progress"
-                ? this.cancelChild(child, report)
-                : child,
-        );
+    const cancelChildren =
+      cancelRemaining ||
+      patched.status === "error" ||
+      patched.status === "cancelled";
+    if (!cancelChildren || !patched.children) return patched;
 
-        return { ...patched, children };
+    const children = patched.children.map((child) =>
+      child.status === "pending" || child.status === "in_progress"
+        ? this.cancelChild(child, report)
+        : child,
+    );
+
+    return { ...patched, children };
+  }
+
+  private static patchChild(
+    root: TodoRootItem,
+    update: TodoUpdateItem,
+    cancelRemaining: boolean,
+    report: TodoUpdatedRow[],
+  ): TodoRootItem {
+    const children: TodoChildren[] = (root.children ?? []).map((child) => {
+      if (child.id === update.id) {
+        const patched = this.patch(child, update);
+        report.push(toRow(patched, "child"));
+        return patched;
+      }
+
+      return cancelRemaining && child.status === "pending"
+        ? this.cancelChild(child, report)
+        : child;
+    });
+
+    // A running subtask needs a running parent, so a `pending` (or broken)
+    // root is brought along. Nothing else is promoted here: a finished or
+    // errored root keeps its status so the order rules stay visible.
+    const status =
+      update.status === "in_progress" &&
+      (root.status === "pending" || root.status === "error")
+        ? ("in_progress" as const)
+        : root.status;
+
+    return { ...root, status, children };
+  }
+
+  /** Cancels a subtask swept up by `cancel_remaining` or a failing parent. */
+  private static cancelChild(
+    child: TodoChildren,
+    report: TodoUpdatedRow[],
+  ): TodoChildren {
+    const cancelled = { ...child, status: "cancelled" as const };
+    report.push(toRow(cancelled, "child"));
+    return cancelled;
+  }
+
+  /**
+   * Copies the row with the update applied. `null` removes `priority` or
+   * `note`; `undefined` keeps the old value.
+   */
+  private static patch<
+    T extends {
+      content: string;
+      status: TodoStatus;
+      priority?: Priority;
+      note?: string;
+    },
+  >(item: T, update: TodoUpdateItem): T {
+    const next = { ...item } as T & {
+      priority?: Priority;
+      note?: string;
+    };
+
+    if (update.content !== undefined) next.content = update.content;
+    if (update.status !== undefined) next.status = update.status;
+
+    if (update.priority !== undefined) {
+      if (update.priority === null) delete next.priority;
+      else next.priority = update.priority;
     }
 
-    private static patchChild(
-        root: TodoRootItem,
-        update: TodoUpdateItem,
-        cancelRemaining: boolean,
-        report: TodoUpdatedRow[],
-    ): TodoRootItem {
-        const children: TodoChildren[] = (root.children ?? []).map((child) => {
-            if (child.id === update.id) {
-                const patched = this.patch(child, update);
-                report.push(toRow(patched, "child"));
-                return patched;
-            }
-
-            return cancelRemaining && child.status === "pending"
-                ? this.cancelChild(child, report)
-                : child;
-        });
-
-        // A running subtask needs a running parent, so a `pending` (or broken)
-        // root is brought along. Nothing else is promoted here: a finished or
-        // errored root keeps its status so the order rules stay visible.
-        const status =
-            update.status === "in_progress" &&
-                (root.status === "pending" || root.status === "error")
-                ? ("in_progress" as const)
-                : root.status;
-
-        return { ...root, status, children };
+    if (update.note !== undefined) {
+      if (update.note === null) delete next.note;
+      else next.note = update.note;
     }
 
-    /** Cancels a subtask swept up by `cancel_remaining` or a failing parent. */
-    private static cancelChild(
-        child: TodoChildren,
-        report: TodoUpdatedRow[],
-    ): TodoChildren {
-        const cancelled = { ...child, status: "cancelled" as const };
-        report.push(toRow(cancelled, "child"));
-        return cancelled;
+    if (isReopen(item.status, update.status)) {
+      next.note = next.note
+        ? `${next.note}; Reopened from cancelled`
+        : "Reopened from cancelled";
     }
 
-    /**
-     * Copies the row with the update applied. `null` removes `priority` or
-     * `note`; `undefined` keeps the old value.
-     */
-    private static patch<
-        T extends {
-            content: string;
-            status: TodoStatus;
-            priority?: Priority;
-            note?: string;
-        },
-    >(item: T, update: TodoUpdateItem): T {
-        const next = { ...item } as T & {
-            priority?: Priority;
-            note?: string;
-        };
-
-        if (update.content !== undefined) next.content = update.content;
-        if (update.status !== undefined) next.status = update.status;
-
-        if (update.priority !== undefined) {
-            if (update.priority === null) delete next.priority;
-            else next.priority = update.priority;
-        }
-
-        if (update.note !== undefined) {
-            if (update.note === null) delete next.note;
-            else next.note = update.note;
-        }
-
-        if (isReopen(item.status, update.status)) {
-            next.note = next.note
-                ? `${next.note}; Reopened from cancelled`
-                : "Reopened from cancelled";
-        }
-
-        return next as T;
-    }
+    return next as T;
+  }
 }
