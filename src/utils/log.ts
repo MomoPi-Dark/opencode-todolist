@@ -1,20 +1,40 @@
-/**
- * Logging sink for the plugin.
- *
- * The project's other packages use Pino, but a plugin runs inside the OpenCode
- * process and owns no transport, so `console.error` is the one sink available
- * without adding a dependency. Centralising it here means call sites never talk to
- * `console` directly, and swapping in Pino later is a change to this file only.
- */
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { format } from "node:util";
 
 const DEBUG = process.env.TODO_DEBUG === "1";
 
-/** Debug-only logging: silent unless `TODO_DEBUG=1`. */
-export const debug = (...args: readonly unknown[]): void => {
-    if (DEBUG) console.error("[todo]", ...args);
+const CONFIG_DIR =
+  process.env.OPENCODE_CONFIG_DIR ?? join(homedir(), ".config", "opencode");
+const LOG_FILE =
+  process.env.TODO_LOG_FILE ??
+  join(CONFIG_DIR, "plugins", "todolist", "logs", "todo.log");
+
+type Level = "DEBUG" | "ERROR" | "INFO" | "WARN";
+
+let dirReady = false;
+
+const write = (level: Level, args: readonly unknown[]): void => {
+  console.log(`[${level}]`, ...args);
+
+  try {
+    if (!dirReady) {
+      mkdirSync(dirname(LOG_FILE), { recursive: true });
+      dirReady = true;
+    }
+    const line = `${new Date().toISOString()} [todo] [${level}] ${format(...args)}\n`;
+    appendFileSync(LOG_FILE, line, "utf8");
+  } catch (error) {
+    console.error(`[todo] failed to write log file ${LOG_FILE}:`, error);
+  }
 };
 
-/** Failures that must surface without `TODO_DEBUG`. */
-export const error = (...args: readonly unknown[]): void => {
-    console.error("[todo]", ...args);
+export const log = {
+  debug: (...args: readonly unknown[]): void => {
+    if (DEBUG) write("DEBUG", args);
+  },
+  error: (...args: readonly unknown[]): void => write("ERROR", args),
+  info: (...args: readonly unknown[]): void => write("INFO", args),
+  warn: (...args: readonly unknown[]): void => write("WARN", args),
 };

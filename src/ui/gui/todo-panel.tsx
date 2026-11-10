@@ -189,7 +189,7 @@ export function TodoPanel(props: Props) {
                       style={{
                         color: MUTED,
                         display: "flex",
-                        width: "12px",
+                        width: "6px",
                         "flex-shrink": 0,
                       }}
                     >
@@ -212,7 +212,6 @@ export function TodoPanel(props: Props) {
                         "flex-shrink": 0,
                       }}
                     >
-                      {/* Spins only while the session works; an idle list keeps the static icon. */}
                       <Show
                         when={props.busy() && row.item.status === "in_progress"}
                         fallback={

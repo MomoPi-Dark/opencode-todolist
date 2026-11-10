@@ -2,7 +2,7 @@ import { type Plugin, Skill } from "@opencode/plugin";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { debug } from "../utils/log";
+import { log } from "../utils/log";
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
@@ -60,7 +60,7 @@ export function parseSkill(file: string, dirName: string): LocalSkill | null {
     description.length <= 1024;
 
   if (!valid) {
-    debug("invalid skill, skipped:", file);
+    log.debug("invalid skill, skipped:", file);
     return null;
   }
 
@@ -117,11 +117,8 @@ export async function registerTodoSkills(ctx: Plugin.Context): Promise<void> {
       }
     });
 
-    debug(
-      "skills registered:",
-      skills.map((s) => s.name).join(", "),
-    );
+    log.debug("skills registered:", skills.map((s) => s.name).join(", "));
   } catch (error) {
-    debug("skill registration failed", error);
+    log.debug("skill registration failed", error);
   }
 }

@@ -6,7 +6,7 @@ import {
   readTodoData,
   takeHintRevision,
 } from "../../storage/todo-store";
-import { debug } from "../../utils/log";
+import { log as logger } from "../../utils/log";
 
 interface HintPart {
   type: "text";
@@ -237,8 +237,7 @@ export function buildTodoHint(
 
 const HINT_MARKER = "<todo_state>";
 
-/** Debug-gated: the hint path is chatty and must stay silent by default. */
-const log = debug;
+const log = logger.debug;
 
 const hasHint = (system: readonly HintPart[]): boolean =>
   system.some(
